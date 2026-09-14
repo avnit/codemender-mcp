@@ -24,20 +24,22 @@ BQ_DATASET="${BQ_DATASET:-codemender}"
 BQ_TABLE="${BQ_TABLE:-findings}"
 SA_NAME="${SA_NAME:-codemender-mcp-sa}"
 ALLOW_UNAUTHENTICATED="${ALLOW_UNAUTHENTICATED:-false}"
+BUILD_SERVICE_ACCOUNT="${BUILD_SERVICE_ACCOUNT:-}"
 
 print_usage() {
   echo "Usage: $0 [OPTIONS]"
   echo ""
   echo "Options:"
-  echo "  -p, --project PROJECT_ID     GCP Project ID (default: current gcloud project)"
-  echo "  -r, --region REGION          GCP Region (default: us-central1)"
-  echo "  -s, --service SERVICE_NAME   Cloud Run Service Name (default: codemender-mcp-server)"
-  echo "  -d, --dataset DATASET        BigQuery Dataset Name (default: codemender)"
-  echo "  -t, --table TABLE            BigQuery Findings Table Name (default: findings)"
-  echo "  --allow-unauthenticated      Allow unauthenticated invocations (default: require IAM auth)"
-  echo "  -h, --help                   Show this help message"
+  echo "  -p, --project PROJECT_ID          GCP Project ID (default: current gcloud project)"
+  echo "  -r, --region REGION               GCP Region (default: us-central1)"
+  echo "  -s, --service SERVICE_NAME        Cloud Run Service Name (default: codemender-mcp-server)"
+  echo "  -d, --dataset DATASET             BigQuery Dataset Name (default: codemender)"
+  echo "  -t, --table TABLE                 BigQuery Findings Table Name (default: findings)"
+  echo "  -b, --build-service-account SA    Service Account for Cloud Build (if default compute SA is disabled)"
+  echo "  --allow-unauthenticated           Allow unauthenticated invocations (default: require IAM auth)"
+  echo "  -h, --help                        Show this help message"
   echo ""
-  echo "Environment variables: PROJECT_ID, REGION, SERVICE_NAME, BQ_DATASET, BQ_TABLE, ALLOW_UNAUTHENTICATED"
+  echo "Environment variables: PROJECT_ID, REGION, SERVICE_NAME, BQ_DATASET, BQ_TABLE, BUILD_SERVICE_ACCOUNT, ALLOW_UNAUTHENTICATED"
 }
 
 # Parse command line arguments
@@ -61,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -t|--table)
       BQ_TABLE="$2"
+      shift 2
+      ;;
+    -b|--build-service-account)
+      BUILD_SERVICE_ACCOUNT="$2"
       shift 2
       ;;
     --allow-unauthenticated)
@@ -137,19 +143,33 @@ for ROLE in "${IAM_ROLES[@]}"; do
     --quiet >/dev/null
 done
 
-# 4. Authentication configuration
+# 4. Check/re-enable Default Compute Service Account used by Cloud Build
+PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)' 2>/dev/null || echo "")
+if [[ -n "${PROJECT_NUMBER}" ]]; then
+  DEFAULT_COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+  echo -e "${YELLOW}==> [4/6] Ensuring Cloud Build service account is active...${RESET}"
+  gcloud iam service-accounts enable "${DEFAULT_COMPUTE_SA}" --project="${PROJECT_ID}" 2>/dev/null || true
+fi
+
+# 5. Authentication and Build Service Account configuration
 AUTH_FLAG="--no-allow-unauthenticated"
 if [[ "${ALLOW_UNAUTHENTICATED}" == "true" ]]; then
   AUTH_FLAG="--allow-unauthenticated"
 fi
 
-# 5. Build and deploy container to Cloud Run
-echo -e "${YELLOW}==> [4/5] Building container and deploying to Cloud Run...${RESET}"
-gcloud run deploy "${SERVICE_NAME}" \
+BUILD_SA_FLAG=""
+if [[ -n "${BUILD_SERVICE_ACCOUNT}" ]]; then
+  BUILD_SA_FLAG="--build-service-account=${BUILD_SERVICE_ACCOUNT}"
+fi
+
+# 6. Build and deploy container to Cloud Run
+echo -e "${YELLOW}==> [5/6] Building container and deploying to Cloud Run...${RESET}"
+if ! gcloud run deploy "${SERVICE_NAME}" \
   --source="." \
   --project="${PROJECT_ID}" \
   --region="${REGION}" \
   --service-account="${SA_EMAIL}" \
+  ${BUILD_SA_FLAG} \
   --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},BQ_DATASET=${BQ_DATASET},BQ_TABLE=${BQ_TABLE}" \
   --port=8080 \
   --cpu=1 \
@@ -158,10 +178,19 @@ gcloud run deploy "${SERVICE_NAME}" \
   --max-instances=10 \
   --concurrency=80 \
   --timeout=300 \
-  ${AUTH_FLAG}
+  ${AUTH_FLAG}; then
+  echo ""
+  echo -e "${RED}${BOLD}Deployment failed during Cloud Build!${RESET}"
+  echo -e "If the error mentions a disabled Compute Engine service account:"
+  echo -e "  1. Re-enable the compute service account:"
+  echo -e "     ${BOLD}gcloud iam service-accounts enable ${PROJECT_NUMBER}-compute@developer.gserviceaccount.com --project=${PROJECT_ID}${RESET}"
+  echo -e "  2. Or specify an active service account for the build:"
+  echo -e "     ${BOLD}./deploy_cloud_run.sh -b \"projects/${PROJECT_ID}/serviceAccounts/${SA_EMAIL}\"${RESET}"
+  exit 1
+fi
 
-# 6. Retrieve Service URL and verify
-echo -e "${YELLOW}==> [5/5] Fetching deployment details...${RESET}"
+# 7. Retrieve Service URL and verify
+echo -e "${YELLOW}==> [6/6] Fetching deployment details...${RESET}"
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" \
   --project="${PROJECT_ID}" \
   --region="${REGION}" \

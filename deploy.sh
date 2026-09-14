@@ -58,19 +58,33 @@ for ROLE in "roles/bigquery.dataViewer" "roles/bigquery.jobUser" "roles/logging.
     --quiet >/dev/null
 done
 
-# 4. Determine auth flag
+# 4. Check/re-enable Default Compute Service Account used by Cloud Build
+PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)' 2>/dev/null || echo "")
+if [[ -n "${PROJECT_NUMBER}" ]]; then
+  DEFAULT_COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+  echo "==> Ensuring Cloud Build service account is active..."
+  gcloud iam service-accounts enable "${DEFAULT_COMPUTE_SA}" --project="${PROJECT_ID}" 2>/dev/null || true
+fi
+
+# 5. Determine auth flag and build service account
 AUTH_FLAG="--no-allow-unauthenticated"
 if [[ "${ALLOW_UNAUTHENTICATED}" == "true" ]]; then
   AUTH_FLAG="--allow-unauthenticated"
 fi
 
-# 5. Build and deploy container to Cloud Run
+BUILD_SA_FLAG=""
+if [[ -n "${BUILD_SERVICE_ACCOUNT:-}" ]]; then
+  BUILD_SA_FLAG="--build-service-account=${BUILD_SERVICE_ACCOUNT}"
+fi
+
+# 6. Build and deploy container to Cloud Run
 echo "==> Building and deploying to Cloud Run..."
 gcloud run deploy "${SERVICE_NAME}" \
   --source="." \
   --project="${PROJECT_ID}" \
   --region="${REGION}" \
   --service-account="${SA_EMAIL}" \
+  ${BUILD_SA_FLAG} \
   --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},BQ_DATASET=${BQ_DATASET},BQ_TABLE=${BQ_TABLE}" \
   --port=8080 \
   --cpu=1 \
