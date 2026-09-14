@@ -40,5 +40,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8080}/healthz || exit 1
 
-# Start Uvicorn ASGI server with SSE transport
-CMD exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}
+# Start Uvicorn ASGI server with proxy headers for Cloud Run TLS termination
+CMD exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'

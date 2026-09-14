@@ -282,11 +282,14 @@ def diagnose_remediation_failure(session_id: str) -> str:
     )
 
 
+# Disable DNS rebinding protection so Cloud Run hostnames (*.run.app) and internal proxies are allowed
+mcp.settings.transport_security.enable_dns_rebinding_protection = False
+
+
 # ============================================================================
 # Cloud Run HTTP Custom Endpoints (Health Check & Info)
 # ============================================================================
 
-@mcp.custom_route("/healthz", methods=["GET"])
 async def health_check(request: Request) -> Response:
     """Health check endpoint for Cloud Run startup and liveness probes."""
     return JSONResponse(
@@ -300,13 +303,13 @@ async def health_check(request: Request) -> Response:
     )
 
 
-@mcp.custom_route("/", methods=["GET"])
 async def root_info(request: Request) -> Response:
     """Root info endpoint."""
     return JSONResponse(
         {
             "service": "Code Mender MCP Server",
             "description": "Model Context Protocol server for Code Mender BigQuery and Cloud Logging data.",
+            "mcp_streamable_endpoint": "/mcp",
             "mcp_sse_endpoint": "/sse",
             "mcp_messages_endpoint": "/messages",
             "healthz_endpoint": "/healthz",
@@ -323,9 +326,78 @@ async def root_info(request: Request) -> Response:
     )
 
 
-# Export the Starlette ASGI app for Uvicorn
-app = mcp.sse_app()
+# ============================================================================
+# Multi-Transport ASGI Application Setup (Streamable HTTP + SSE)
+# ============================================================================
+
+from starlette.types import Scope, Receive, Send
+from starlette.routing import Route
+from starlette.applications import Starlette
+
+
+class AcceptHeaderNormalizationMiddleware:
+    """Ensures incoming HTTP requests have acceptable headers for MCP Streamable HTTP.
+    
+    Gemini Enterprise and standard HTTP callers may send 'Accept: application/json' or
+    '*/*', which would otherwise trigger a 406 Not Acceptable in FastMCP.
+    """
+    def __init__(self, app_instance):
+        self.app = app_instance
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            accept = headers.get(b"accept", b"").decode("utf-8", "ignore")
+            if not ("application/json" in accept and "text/event-stream" in accept):
+                new_headers = [(k, v) for k, v in scope.get("headers", []) if k != b"accept"]
+                new_headers.append((b"accept", b"application/json, text/event-stream"))
+                scope["headers"] = new_headers
+        await self.app(scope, receive, send)
+
+
+def create_app() -> Starlette:
+    """Build a unified Starlette application supporting:
+    1. /mcp: Streamable HTTP (POST, GET) - used by Gemini Enterprise & Agent Gateway.
+    2. /: Root endpoint (GET for info, POST routed to MCP Streamable HTTP).
+    3. /sse: SSE endpoint (GET for SSE stream, POST routed to MCP Streamable HTTP).
+    4. /messages: SSE message transport (POST).
+    5. /healthz: Cloud Run health checks (GET).
+    """
+    http_app = mcp.streamable_http_app()
+    sse_app = mcp.sse_app()
+    streamable_mcp_handler = http_app.routes[0].endpoint
+
+    routes = [
+        # Health check
+        Route("/healthz", health_check, methods=["GET"]),
+        # Streamable HTTP (/mcp) for Gemini Enterprise / Discovery Engine
+        http_app.routes[0],
+        # SSE endpoints (/sse GET and /messages POST) for Claude / Cursor
+        sse_app.routes[0],
+        sse_app.routes[1],
+        # Root endpoint (GET for service info, POST routed to MCP handler)
+        Route("/", root_info, methods=["GET"]),
+        Route("/", endpoint=streamable_mcp_handler, methods=["POST"]),
+        # Fallback: if a client POSTs to /sse, handle it with Streamable HTTP instead of 405
+        Route("/sse", endpoint=streamable_mcp_handler, methods=["POST"]),
+    ]
+
+    base_app = Starlette(
+        routes=routes,
+        lifespan=lambda app: mcp.session_manager.run(),
+    )
+    return AcceptHeaderNormalizationMiddleware(base_app)
+
+
+# Export ASGI application for Uvicorn
+app = create_app()
 
 if __name__ == "__main__":
     logger.info("Starting Code Mender MCP Server on %s:%d", settings.host, settings.port)
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    uvicorn.run(
+        "server:app",
+        host=settings.host,
+        port=settings.port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )

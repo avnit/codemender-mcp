@@ -115,8 +115,14 @@ class TestLoggingService(unittest.TestCase):
 
 
 class TestHttpEndpoints(unittest.TestCase):
-    def setUp(self):
-        self.client = TestClient(app)
+    @classmethod
+    def setUpClass(cls):
+        cls.client_context = TestClient(app)
+        cls.client = cls.client_context.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client_context.__exit__(None, None, None)
 
     def test_health_check(self):
         response = self.client.get("/healthz")
@@ -130,7 +136,31 @@ class TestHttpEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["service"], "Code Mender MCP Server")
-        self.assertIn("/sse", data["mcp_sse_endpoint"])
+        self.assertIn("/mcp", data["mcp_streamable_endpoint"])
+
+    def test_mcp_streamable_http(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "gemini-enterprise", "version": "1.0"},
+            },
+        }
+        # Test /mcp (endpoint used by Gemini Enterprise)
+        res_mcp = self.client.post("/mcp", json=payload)
+        self.assertEqual(res_mcp.status_code, 200)
+        self.assertIn("protocolVersion", res_mcp.text)
+
+        # Test POST / (root)
+        res_root = self.client.post("/", json=payload)
+        self.assertEqual(res_root.status_code, 200)
+
+        # Test POST /sse (fallback)
+        res_sse = self.client.post("/sse", json=payload)
+        self.assertEqual(res_sse.status_code, 200)
 
 
 if __name__ == "__main__":
