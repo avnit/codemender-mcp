@@ -23,7 +23,7 @@ logger = logging.getLogger("codemender-mcp-server")
 bq_service = BigQueryService()
 logging_service = LoggingService()
 
-# Initialize FastMCP Server
+# Initialize FastMCP Server (stateless_http=True for serverless Cloud Run & Gemini Enterprise)
 mcp = FastMCP(
     name="Code Mender Security MCP Server",
     instructions=(
@@ -32,6 +32,7 @@ mcp = FastMCP(
         "by Code Mender. Use these tools to find issues, review generated patches, inspect "
         "sandbox/execution logs, and diagnose remediation failures."
     ),
+    stateless_http=True,
 )
 
 

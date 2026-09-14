@@ -93,6 +93,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --max-instances=10 \
   --concurrency=80 \
   --timeout=300 \
+  --session-affinity \
   ${AUTH_FLAG}
 
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" \

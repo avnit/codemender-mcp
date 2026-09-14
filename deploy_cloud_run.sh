@@ -178,6 +178,7 @@ if ! gcloud run deploy "${SERVICE_NAME}" \
   --max-instances=10 \
   --concurrency=80 \
   --timeout=300 \
+  --session-affinity \
   ${AUTH_FLAG}; then
   echo ""
   echo -e "${RED}${BOLD}Deployment failed during Cloud Build!${RESET}"
