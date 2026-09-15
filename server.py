@@ -334,29 +334,65 @@ async def root_info(request: Request) -> Response:
 from starlette.types import Scope, Receive, Send
 from starlette.routing import Route
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 
 
-class AcceptHeaderNormalizationMiddleware:
-    """Ensures incoming HTTP requests have acceptable headers for MCP Streamable HTTP.
-    
-    Gemini Enterprise and standard HTTP callers may send 'Accept: application/json' or
-    '*/*', which would otherwise trigger a 406 Not Acceptable in FastMCP.
+class MCPCompatibilityMiddleware:
+    """Ensures complete compatibility with Gemini Enterprise, browsers, and MCP clients:
+    1. Responds to CORS preflight OPTIONS requests with 204 No Content.
+    2. Handles DELETE requests (explicit session termination) with 200 OK.
+    3. Handles HEAD requests with 200 OK.
+    4. Normalizes Accept headers to satisfy FastMCP Streamable HTTP requirements
+       ('application/json, text/event-stream').
     """
-    def __init__(self, app_instance):
-        self.app = app_instance
+    def __init__(self, inner_app):
+        self.inner_app = inner_app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] == "http":
+            method = scope.get("method", "")
+
+            # Handle CORS preflight OPTIONS requests cleanly without hitting FastMCP 405
+            if method == "OPTIONS":
+                response = Response(
+                    status_code=204,
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD",
+                        "Access-Control-Allow-Headers": "*",
+                    },
+                )
+                await response(scope, receive, send)
+                return
+
+            # Handle explicit session termination DELETE requests gracefully
+            if method == "DELETE":
+                response = JSONResponse(
+                    {"status": "session terminated"},
+                    status_code=200,
+                    headers={"Access-Control-Allow-Origin": "*"},
+                )
+                await response(scope, receive, send)
+                return
+
+            # Handle HEAD probes gracefully
+            if method == "HEAD":
+                response = Response(status_code=200, headers={"Access-Control-Allow-Origin": "*"})
+                await response(scope, receive, send)
+                return
+
+            # Normalize Accept header so clients sending */* or application/json do not receive 406
             headers = dict(scope.get("headers", []))
             accept = headers.get(b"accept", b"").decode("utf-8", "ignore")
             if not ("application/json" in accept and "text/event-stream" in accept):
                 new_headers = [(k, v) for k, v in scope.get("headers", []) if k != b"accept"]
                 new_headers.append((b"accept", b"application/json, text/event-stream"))
                 scope["headers"] = new_headers
-        await self.app(scope, receive, send)
+
+        await self.inner_app(scope, receive, send)
 
 
-def create_app() -> Starlette:
+def create_app() -> Any:
     """Build a unified Starlette application supporting:
     1. /mcp: Streamable HTTP (POST, GET) - used by Gemini Enterprise & Agent Gateway.
     2. /: Root endpoint (GET for info, POST routed to MCP Streamable HTTP).
@@ -387,7 +423,15 @@ def create_app() -> Starlette:
         routes=routes,
         lifespan=lambda app: mcp.session_manager.run(),
     )
-    return AcceptHeaderNormalizationMiddleware(base_app)
+    # Layer CORS and compatibility middleware
+    cors_app = CORSMiddleware(
+        base_app,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    return MCPCompatibilityMiddleware(cors_app)
 
 
 # Export ASGI application for Uvicorn

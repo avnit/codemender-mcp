@@ -162,6 +162,39 @@ class TestHttpEndpoints(unittest.TestCase):
         res_sse = self.client.post("/sse", json=payload)
         self.assertEqual(res_sse.status_code, 200)
 
+    def test_http_methods_compatibility_no_405(self):
+        """Verify Gemini Enterprise preflight and lifecycle requests (OPTIONS, DELETE, HEAD) do not 405."""
+        for path in ["/mcp", "/"]:
+            # Preflight OPTIONS
+            res_options = self.client.options(path)
+            self.assertEqual(res_options.status_code, 204)
+            self.assertEqual(res_options.headers.get("access-control-allow-origin"), "*")
+
+            # Session termination DELETE
+            res_delete = self.client.delete(path)
+            self.assertEqual(res_delete.status_code, 200)
+            self.assertEqual(res_delete.json(), {"status": "session terminated"})
+
+            # Liveness / probe HEAD
+            res_head = self.client.head(path)
+            self.assertEqual(res_head.status_code, 200)
+
+    def test_mcp_tools_list(self):
+        """Verify tools/list works over /mcp with standard JSON Accept header."""
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {},
+        }
+        res = self.client.post(
+            "/mcp",
+            json=payload,
+            headers={"Accept": "application/json"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("list_codemender_issues", res.text)
+
 
 if __name__ == "__main__":
     unittest.main()
