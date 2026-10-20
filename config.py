@@ -33,6 +33,28 @@ class Settings(BaseSettings):
         description="Log name filter or prefix for Code Mender logs."
     )
 
+    # Wiz Configuration (service account with read:issues scope)
+    wiz_client_id: Optional[str] = Field(
+        default=os.getenv("WIZ_CLIENT_ID"),
+        description="Wiz service account client ID."
+    )
+    wiz_client_secret: Optional[str] = Field(
+        default=os.getenv("WIZ_CLIENT_SECRET"),
+        description="Wiz service account client secret."
+    )
+    wiz_api_endpoint: Optional[str] = Field(
+        default=os.getenv("WIZ_API_ENDPOINT"),
+        description="Wiz GraphQL endpoint for your tenant, e.g. https://api.us17.app.wiz.io/graphql."
+    )
+    wiz_auth_url: str = Field(
+        default=os.getenv("WIZ_AUTH_URL", "https://auth.app.wiz.io/oauth/token"),
+        description="Wiz OAuth token URL."
+    )
+    wiz_audience: str = Field(
+        default=os.getenv("WIZ_AUDIENCE", "wiz-api"),
+        description="Wiz OAuth audience."
+    )
+
     # Server Configuration
     host: str = Field(default="0.0.0.0", description="Host address to bind.")
     port: int = Field(
