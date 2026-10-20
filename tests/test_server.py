@@ -7,6 +7,7 @@ from starlette.testclient import TestClient
 
 from services.bigquery_service import BigQueryService, serialize_bq_val
 from services.logging_service import LoggingService, format_log_entry
+from services.wiz_service import WizService
 from server import app
 
 
@@ -130,6 +131,139 @@ class TestLoggingService(unittest.TestCase):
         self.assertEqual(formatted["labels"]["session_id"], "sess-123")
 
 
+def _mock_response(status_code=200, json_body=None):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = json_body or {}
+    resp.raise_for_status.return_value = None
+    return resp
+
+
+class TestWizService(unittest.TestCase):
+    def _service(self, http):
+        return WizService(
+            client_id="cid",
+            client_secret="secret",
+            api_endpoint="https://api.test.app.wiz.io/graphql",
+            http_client=http,
+        )
+
+    def test_not_configured(self):
+        service = WizService(http_client=MagicMock())
+        service.client_id = service.client_secret = service.api_endpoint = None
+        res = service.list_issues()
+        self.assertIn("error", res)
+        self.assertIn("not configured", res["error"])
+
+    def test_build_issue_filters(self):
+        filters = WizService.build_issue_filters(
+            severity="critical, high",
+            status="OPEN",
+            issue_type="TOXIC_COMBINATION",
+            project_id="proj-1",
+            search_query="s3",
+            start_date="2026-09-01T00:00:00Z",
+            entity_id="ent-1",
+        )
+        self.assertEqual(filters["severity"], ["CRITICAL", "HIGH"])
+        self.assertEqual(filters["status"], ["OPEN"])
+        self.assertEqual(filters["type"], ["TOXIC_COMBINATION"])
+        self.assertEqual(filters["project"], ["proj-1"])
+        self.assertEqual(filters["search"], "s3")
+        self.assertEqual(filters["createdAt"], {"after": "2026-09-01T00:00:00Z"})
+        self.assertEqual(filters["relatedEntity"], {"id": "ent-1"})
+
+    def test_invalid_severity_rejected(self):
+        res = self._service(MagicMock()).list_issues(severity="SUPER_BAD")
+        self.assertIn("Invalid severity", res["error"])
+
+    def test_list_issues_auth_and_query(self):
+        http = MagicMock()
+        http.post.side_effect = [
+            _mock_response(json_body={"access_token": "tok", "expires_in": 3600}),
+            _mock_response(json_body={"data": {"issuesV2": {
+                "totalCount": 1,
+                "pageInfo": {"hasNextPage": False, "endCursor": "c1"},
+                "nodes": [{"id": "wiz-1", "severity": "CRITICAL", "status": "OPEN"}],
+            }}}),
+        ]
+        res = self._service(http).list_issues(severity="CRITICAL", limit=5)
+
+        self.assertEqual(res["total_issues"], 1)
+        self.assertEqual(res["issues"][0]["id"], "wiz-1")
+        self.assertEqual(res["next_cursor"], "c1")
+
+        auth_call, gql_call = http.post.call_args_list
+        self.assertEqual(auth_call.kwargs["data"]["grant_type"], "client_credentials")
+        self.assertEqual(auth_call.kwargs["data"]["audience"], "wiz-api")
+        self.assertEqual(gql_call.kwargs["headers"]["Authorization"], "Bearer tok")
+        self.assertEqual(gql_call.kwargs["json"]["variables"]["first"], 5)
+        self.assertEqual(gql_call.kwargs["json"]["variables"]["filterBy"]["severity"], ["CRITICAL"])
+
+    def test_token_is_cached(self):
+        http = MagicMock()
+        gql = {"data": {"issuesV2": {"nodes": [], "pageInfo": {}}}}
+        http.post.side_effect = [
+            _mock_response(json_body={"access_token": "tok", "expires_in": 3600}),
+            _mock_response(json_body=gql),
+            _mock_response(json_body=gql),
+        ]
+        service = self._service(http)
+        service.list_issues()
+        service.list_issues()
+        self.assertEqual(http.post.call_count, 3)
+
+    def test_graphql_errors_returned(self):
+        http = MagicMock()
+        http.post.side_effect = [
+            _mock_response(json_body={"access_token": "tok", "expires_in": 3600}),
+            _mock_response(json_body={"errors": [{"message": "bad field"}]}),
+        ]
+        res = self._service(http).get_issue_details("wiz-1")
+        self.assertIn("bad field", res["error"])
+
+    def test_issue_not_found(self):
+        http = MagicMock()
+        http.post.side_effect = [
+            _mock_response(json_body={"access_token": "tok", "expires_in": 3600}),
+            _mock_response(json_body={"data": {"issuesV2": {"nodes": []}}}),
+        ]
+        res = self._service(http).get_issue_details("missing")
+        self.assertIn("not found", res["error"])
+
+    def test_summary(self):
+        http = MagicMock()
+        http.post.side_effect = [
+            _mock_response(json_body={"access_token": "tok", "expires_in": 3600}),
+            _mock_response(json_body={"data": {
+                "total": {"totalCount": 10}, "critical": {"totalCount": 2},
+                "high": {"totalCount": 3}, "medium": {"totalCount": 4},
+                "low": {"totalCount": 1}, "informational": {"totalCount": 0},
+            }}),
+        ]
+        res = self._service(http).get_issues_summary()
+        self.assertEqual(res["total_issues"], 10)
+        self.assertEqual(res["severity_breakdown"]["CRITICAL"], 2)
+        self.assertEqual(res["filters_applied"]["status"], ["OPEN", "IN_PROGRESS"])
+
+    def test_read_query_rejects_mutations(self):
+        http = MagicMock()
+        service = self._service(http)
+        res = service.execute_read_query("mutation { updateIssue(input: {}) { issue { id } } }")
+        self.assertIn("error", res)
+        http.post.assert_not_called()
+
+        # The word 'mutation' inside a string literal is allowed
+        http.post.side_effect = [
+            _mock_response(json_body={"access_token": "tok", "expires_in": 3600}),
+            _mock_response(json_body={"data": {"issuesV2": {"nodes": []}}}),
+        ]
+        res_ok = service.execute_read_query(
+            'query { issuesV2(filterBy: {search: "mutation"}) { nodes { id } } }'
+        )
+        self.assertNotIn("error", res_ok)
+
+
 class TestHttpEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -210,6 +344,8 @@ class TestHttpEndpoints(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertIn("list_codemender_issues", res.text)
+        self.assertIn("list_wiz_issues", res.text)
+        self.assertIn("get_wiz_issue_details", res.text)
 
 
 if __name__ == "__main__":

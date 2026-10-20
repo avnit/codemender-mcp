@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from config import settings
 from services.bigquery_service import BigQueryService
 from services.logging_service import LoggingService
+from services.wiz_service import WizService
 
 # Configure logging
 logging.basicConfig(
@@ -22,6 +23,7 @@ logger = logging.getLogger("codemender-mcp-server")
 # Initialize services
 bq_service = BigQueryService()
 logging_service = LoggingService()
+wiz_service = WizService()
 
 # Initialize FastMCP Server (stateless_http=True for serverless Cloud Run & Gemini Enterprise)
 mcp = FastMCP(
@@ -30,7 +32,9 @@ mcp = FastMCP(
         "You have access to Google Cloud BigQuery and Cloud Logging tools to search, "
         "inspect, and triage security findings and automated remediation jobs generated "
         "by Code Mender. Use these tools to find issues, review generated patches, inspect "
-        "sandbox/execution logs, and diagnose remediation failures."
+        "sandbox/execution logs, and diagnose remediation failures. You also have read-only "
+        "access to Wiz cloud security issues (toxic combinations, threat detections, and "
+        "cloud configuration findings) via the Wiz tools."
     ),
     stateless_http=True,
 )
@@ -230,6 +234,101 @@ def search_codemender_logs(
 
 
 # ============================================================================
+# MCP Tools: Wiz (Cloud Security Issues)
+# ============================================================================
+
+@mcp.tool()
+def list_wiz_issues(
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
+    issue_type: Optional[str] = None,
+    project_id: Optional[str] = None,
+    search_query: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    limit: int = 25,
+    cursor: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List and filter security issues from Wiz, newest first.
+
+    Args:
+        severity: Comma-separated severities: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFORMATIONAL'.
+        status: Comma-separated statuses: 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'REJECTED'.
+        issue_type: Comma-separated types: 'TOXIC_COMBINATION', 'THREAT_DETECTION', 'CLOUD_CONFIGURATION'.
+        project_id: Comma-separated Wiz project IDs.
+        search_query: Free-text search across issues.
+        start_date: Issues created on or after this ISO timestamp (e.g. '2026-09-01T00:00:00Z').
+        end_date: Issues created on or before this ISO timestamp.
+        entity_id: Only issues related to this Wiz entity (resource) ID.
+        limit: Max issues to return (default: 25, max: 200).
+        cursor: Pagination cursor from a previous call's `next_cursor`.
+    """
+    return wiz_service.list_issues(
+        severity=severity,
+        status=status,
+        issue_type=issue_type,
+        project_id=project_id,
+        search_query=search_query,
+        start_date=start_date,
+        end_date=end_date,
+        entity_id=entity_id,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@mcp.tool()
+def get_wiz_issue_details(issue_id: str) -> Dict[str, Any]:
+    """Retrieve full details for a single Wiz issue.
+
+    Returns the source rule/control (with description and remediation guidance),
+    the affected cloud resource, projects, linked service tickets, and notes.
+
+    Args:
+        issue_id: The Wiz issue ID.
+    """
+    return wiz_service.get_issue_details(issue_id=issue_id)
+
+
+@mcp.tool()
+def get_wiz_issues_summary(
+    status: Optional[str] = "OPEN,IN_PROGRESS",
+    project_id: Optional[str] = None,
+    issue_type: Optional[str] = None,
+    days: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Get counts of Wiz issues broken down by severity.
+
+    Args:
+        status: Comma-separated statuses to include (default: 'OPEN,IN_PROGRESS').
+        project_id: Optional comma-separated Wiz project IDs.
+        issue_type: Optional comma-separated issue types.
+        days: Optional lookback window in days (by creation date).
+    """
+    return wiz_service.get_issues_summary(
+        status=status, project_id=project_id, issue_type=issue_type, days=days
+    )
+
+
+@mcp.tool()
+def query_wiz_graphql(
+    query: str,
+    variables: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Execute a read-only GraphQL query against the Wiz API.
+
+    Mutations and subscriptions are rejected. Use this for data the other Wiz
+    tools don't cover (e.g. cloudResources, vulnerabilityFindings, projects).
+
+    Args:
+        query: GraphQL query document.
+        variables: Optional GraphQL variables.
+    """
+    return wiz_service.execute_read_query(query=query, variables=variables)
+
+
+# ============================================================================
 # MCP Resources
 # ============================================================================
 
@@ -245,6 +344,17 @@ def resource_critical_issues() -> str:
     """Latest unresolved CRITICAL and HIGH severity issues from Code Mender."""
     issues = bq_service.list_issues(
         severity="CRITICAL",
+        limit=10,
+    )
+    return json.dumps(issues, indent=2)
+
+
+@mcp.resource("wiz://critical-issues")
+def resource_wiz_critical_issues() -> str:
+    """Latest open CRITICAL issues from Wiz."""
+    issues = wiz_service.list_issues(
+        severity="CRITICAL",
+        status="OPEN,IN_PROGRESS",
         limit=10,
     )
     return json.dumps(issues, indent=2)
@@ -283,6 +393,20 @@ def diagnose_remediation_failure(session_id: str) -> str:
     )
 
 
+@mcp.prompt()
+def triage_wiz_issue(issue_id: str) -> str:
+    """Prompt template for triaging a Wiz cloud security issue."""
+    return (
+        f"Please triage the Wiz issue '{issue_id}':\n"
+        f"1. Call `get_wiz_issue_details(issue_id='{issue_id}')` to retrieve the source rule, "
+        f"affected resource, projects, and remediation guidance.\n"
+        f"2. If the affected resource maps to a code repository, call `list_codemender_issues` "
+        f"with that repository to check for related Code Mender findings or patches.\n"
+        f"3. Assess exposure and impact based on the resource type, cloud platform, and severity.\n"
+        f"4. Provide a concise summary with root cause, risk, and recommended remediation steps."
+    )
+
+
 # Disable DNS rebinding protection so Cloud Run hostnames (*.run.app) and internal proxies are allowed
 mcp.settings.transport_security.enable_dns_rebinding_protection = False
 
@@ -300,6 +424,7 @@ async def health_check(request: Request) -> Response:
             "project": bq_service.project_id or "auto-detected",
             "dataset": bq_service.dataset,
             "table": bq_service.table,
+            "wiz_configured": wiz_service.is_configured,
         }
     )
 
@@ -322,6 +447,10 @@ async def root_info(request: Request) -> Response:
                 "query_codemender_bigquery",
                 "get_issue_logs",
                 "search_codemender_logs",
+                "list_wiz_issues",
+                "get_wiz_issue_details",
+                "get_wiz_issues_summary",
+                "query_wiz_graphql",
             ],
         }
     )
