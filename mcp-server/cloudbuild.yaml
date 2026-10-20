@@ -1,0 +1,51 @@
+steps:
+  # 1. Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA'
+      - '-t'
+      - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:latest'
+      - '.'
+
+  # 2. Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}'
+
+  # 3. Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE}'
+      - '--image=${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA'
+      - '--region=${_LOCATION}'
+      - '--platform=managed'
+      - '--service-account=${_SERVICE_ACCOUNT}@$PROJECT_ID.iam.gserviceaccount.com'
+      # --update-env-vars merges with existing vars, so Wiz settings added once are preserved
+      - '--update-env-vars=GCP_PROJECT_ID=$PROJECT_ID,REGION=${_LOCATION},BQ_DATASET=${_BQ_DATASET},BQ_TABLE=${_BQ_TABLE},SECURITY_DATASET=${_SECURITY_DATASET},SCC_DATASET=${_SCC_DATASET},SECURITY_LOGS_DATASET=${_SECURITY_LOGS_DATASET},SANDBOX_JOB_NAME=${_SANDBOX_JOB_NAME},SANDBOX_BUCKET=$PROJECT_ID-sandbox-inputs'
+      - '--port=8080'
+
+substitutions:
+  _LOCATION: 'us-central1'
+  _REPOSITORY: 'security-lab'
+  _SERVICE: 'codemender-mcp-server'
+  _SERVICE_ACCOUNT: 'codemender-mcp-sa'
+  _BQ_DATASET: 'codemender'
+  _BQ_TABLE: 'findings'
+  _SECURITY_DATASET: 'security_lab'
+  _SCC_DATASET: 'scc_export'
+  _SECURITY_LOGS_DATASET: 'security_logs'
+  _SANDBOX_JOB_NAME: 'codemender-sandbox'
+
+images:
+  - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA'
+  - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

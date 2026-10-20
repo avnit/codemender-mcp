@@ -1,0 +1,33 @@
+{
+  "insertId": "sample-codemender-cm-0001",
+  "logName": "projects/your-gcp-project-id/logs/codemender",
+  "resource": {
+    "type": "global",
+    "labels": {
+      "project_id": "your-gcp-project-id"
+    }
+  },
+  "timestamp": "2026-10-14T15:11:02Z",
+  "receiveTimestamp": "2026-10-14T15:11:03Z",
+  "severity": "CRITICAL",
+  "jsonPayload": {
+    "event_type": "CODEMENDER_FINDING",
+    "issue_id": "CM-0001",
+    "finding_id": "CM-0001",
+    "session_id": "cm-session-20261014-01",
+    "repository": "your-github-org/payment-service",
+    "commit_sha": "3f2a9c1d8e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b",
+    "severity": "CRITICAL",
+    "cwe_id": "CWE-89",
+    "vulnerability_type": "SQL_INJECTION",
+    "file_path": "app/db.py",
+    "line_number": 42,
+    "title": "SQL injection in transaction lookup",
+    "description": "get_transactions() builds a SQL statement with an f-string from the 'account' query parameter of /api/transactions. An attacker can read every account's transactions with account=' OR '1'='1.",
+    "status": "DETECTED",
+    "patch_ref": null,
+    "pr_url": null,
+    "wiz_issue_id": "wiz-issue-0001",
+    "message": "CM-0001 SQL injection in transaction lookup (app/db.py)"
+  }
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "received_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "message_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "insert_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "error",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "raw_message",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  }
+]

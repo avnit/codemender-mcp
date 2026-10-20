@@ -1,0 +1,53 @@
+# Reference spec for the Cloud Run Job `codemender-sandbox`.
+# Terraform in infra/terraform/ creates the same job; use this file only for
+# inspection or a manual `gcloud run jobs replace`.
+#
+# Replace PROJECT and REGION, then:
+#   gcloud run jobs replace job.yaml --region REGION --project PROJECT
+#
+# Execution environment: Cloud Run Jobs run only on the second-generation
+# environment (microVM). In the v2 Admin API / Terraform this is
+# execution_environment = "EXECUTION_ENVIRONMENT_GEN2". In this v1 YAML it is
+# the run.googleapis.com/execution-environment annotation below; it is the
+# default for jobs and cannot be set to gen1.
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: codemender-sandbox
+  labels:
+    cloud.googleapis.com/location: REGION
+    component: codemender-sandbox
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        # Direct VPC egress; ALL traffic goes through sandbox-vpc, where the
+        # firewall denies all egress except 199.36.153.4/30:443.
+        run.googleapis.com/network-interfaces: '[{"network":"sandbox-vpc","subnetwork":"sandbox-subnet"}]'
+        run.googleapis.com/vpc-access-egress: all-traffic
+    spec:
+      taskCount: 1
+      parallelism: 1
+      template:
+        spec:
+          serviceAccountName: sandbox-runner-sa@PROJECT.iam.gserviceaccount.com
+          maxRetries: 0
+          timeoutSeconds: 900
+          containers:
+            - image: REGION-docker.pkg.dev/PROJECT/security-lab/codemender-sandbox:latest
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 2Gi
+              # Defaults. Each execution overrides these with
+              # `gcloud run jobs execute --update-env-vars ...`.
+              env:
+                - name: POC_TEST
+                  value: tests/poc
+                - name: UNIT_TEST_CMD
+                  value: python -m pytest -q tests/unit
+                - name: TIMEOUT_SECONDS
+                  value: "600"
+                - name: PATCH_URI
+                  value: none

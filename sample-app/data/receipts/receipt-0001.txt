@@ -1,0 +1,6 @@
+RECEIPT receipt-0001
+Account: ACC-1001
+Merchant: Coffee Corner
+Amount: 12.50 USD
+Date: 2026-01-05T09:15:00Z
+(Sample data for the payment-service security lab.)

@@ -1,0 +1,116 @@
+[
+  {
+    "name": "insert_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "LogEntry insertId. Row identifier."
+  },
+  {
+    "name": "event_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "LogEntry timestamp. Partition column."
+  },
+  {
+    "name": "ingest_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Time the ingestion service wrote the row."
+  },
+  {
+    "name": "event_type",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "CODEMENDER_SCAN_STARTED|CODEMENDER_SCAN_COMPLETED|CODEMENDER_FINDING|CODEMENDER_PATCH|SANDBOX_RESULT|IAM_POLICY_CHANGE|OTHER_SECURITY."
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "codemender|sandbox|cloud_audit."
+  },
+  {
+    "name": "severity",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Event severity."
+  },
+  {
+    "name": "project_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Project of the logged resource."
+  },
+  {
+    "name": "resource_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Monitored resource type."
+  },
+  {
+    "name": "resource_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Resource name or ID."
+  },
+  {
+    "name": "principal",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Acting principal (audit logs)."
+  },
+  {
+    "name": "repository",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Repository as owner/name."
+  },
+  {
+    "name": "commit_sha",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Commit SHA."
+  },
+  {
+    "name": "issue_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Issue ID."
+  },
+  {
+    "name": "session_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "CodeMender session ID."
+  },
+  {
+    "name": "run_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Sandbox run ID."
+  },
+  {
+    "name": "status",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Status carried by the event."
+  },
+  {
+    "name": "summary",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "One-line human-readable summary."
+  },
+  {
+    "name": "log_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "LogEntry logName."
+  },
+  {
+    "name": "raw_payload",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Original payload as JSON text."
+  }
+]

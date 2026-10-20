@@ -1,0 +1,30 @@
+{
+  "insertId": "audit-setiam-0001",
+  "logName": "projects/your-gcp-project-id/logs/cloudaudit.googleapis.com%2Factivity",
+  "resource": {
+    "type": "project",
+    "labels": {"project_id": "your-gcp-project-id"}
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-10-20T16:00:00.000001Z",
+  "receiveTimestamp": "2026-10-20T16:00:01Z",
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudresourcemanager.googleapis.com",
+    "methodName": "SetIamPolicy",
+    "resourceName": "projects/your-gcp-project-id",
+    "authenticationInfo": {"principalEmail": "admin@example.com"},
+    "serviceData": {
+      "@type": "type.googleapis.com/google.iam.v1.logging.AuditData",
+      "policyDelta": {
+        "bindingDeltas": [
+          {
+            "action": "ADD",
+            "role": "roles/editor",
+            "member": "serviceAccount:payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com"
+          }
+        ]
+      }
+    }
+  }
+}

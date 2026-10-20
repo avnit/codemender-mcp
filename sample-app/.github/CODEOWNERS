@@ -1,0 +1,13 @@
+# Code owners for payment-service (intentionally vulnerable lab app).
+# Replace your-github-org with your org. The team must exist and have write
+# access to the repo, or GitHub ignores the rule.
+# Combined with branch protection ("Require review from Code Owners"), every
+# PR, including PRs opened by an AI agent, needs one human approval to merge.
+
+*                       @your-github-org/security-reviewers
+
+# Workflows, CODEOWNERS and the sandbox contract: changes here can bypass the
+# controls above, so keep the same owners.
+/.github/               @your-github-org/security-reviewers
+/.codemender/           @your-github-org/security-reviewers
+/terraform/             @your-github-org/security-reviewers

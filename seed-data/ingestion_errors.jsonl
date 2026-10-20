@@ -1,0 +1,2 @@
+{"received_at":"2026-10-15T08:30:12Z","message_id":"1700000000000001","insert_id":null,"error":"JSONDecodeError: Expecting value: line 1 column 1 (char 0)","raw_message":"hello from a manual pubsub test"}
+{"received_at":"2026-10-15T08:31:40Z","message_id":"1700000000000002","insert_id":null,"error":"LogEntry has no insertId; cannot build security_events row","raw_message":"{\"logName\":\"projects/your-gcp-project-id/logs/codemender\",\"timestamp\":\"2026-10-15T08:31:39Z\",\"jsonPayload\":{\"event_type\":\"CODEMENDER_FINDING\",\"issue_id\":\"CM-0001\"}}"}

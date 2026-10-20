@@ -1,0 +1,93 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "insertId",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "logName",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "severity",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "resource",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "type",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "labels",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "project_id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "location",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "resource_container",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "jsonPayload",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "operation_type",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "filter_match_state",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "matched_filters",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "template",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "invocation_result",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "client_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  }
+]

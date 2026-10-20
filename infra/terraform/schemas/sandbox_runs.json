@@ -1,0 +1,104 @@
+[
+  {
+    "name": "run_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Sandbox run ID."
+  },
+  {
+    "name": "execution_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Cloud Run job execution name."
+  },
+  {
+    "name": "repository",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Repository as owner/name."
+  },
+  {
+    "name": "commit_sha",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Commit SHA tested."
+  },
+  {
+    "name": "patch_ref",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Patch URI or reference."
+  },
+  {
+    "name": "issue_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Issue ID."
+  },
+  {
+    "name": "poc_test",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "PoC test path."
+  },
+  {
+    "name": "started_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Run start time."
+  },
+  {
+    "name": "finished_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Run end time."
+  },
+  {
+    "name": "poc_before",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "EXPLOITABLE|NOT_EXPLOITABLE|ERROR."
+  },
+  {
+    "name": "poc_after",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "EXPLOITABLE|NOT_EXPLOITABLE|ERROR."
+  },
+  {
+    "name": "patch_applied",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE",
+    "description": "Whether the patch applied cleanly."
+  },
+  {
+    "name": "unit_tests_passed",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE",
+    "description": "Whether unit tests passed after the patch."
+  },
+  {
+    "name": "tests_total",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Unit tests run."
+  },
+  {
+    "name": "tests_failed",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Unit tests failed."
+  },
+  {
+    "name": "verdict",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "PATCH_VERIFIED|PATCH_FAILED|POC_NOT_REPRODUCED|ERROR."
+  },
+  {
+    "name": "log_excerpt",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Tail of the run log."
+  }
+]

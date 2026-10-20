@@ -1,0 +1,116 @@
+[
+  {
+    "name": "insert_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Cloud Logging LogEntry insertId. Also used as the streaming insert row ID."
+  },
+  {
+    "name": "event_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "LogEntry timestamp (falls back to receiveTimestamp)."
+  },
+  {
+    "name": "ingest_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Time the ingestion service received the Pub/Sub message."
+  },
+  {
+    "name": "event_type",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "CODEMENDER_SCAN_STARTED, CODEMENDER_SCAN_COMPLETED, CODEMENDER_FINDING, CODEMENDER_PATCH, SANDBOX_RESULT, IAM_POLICY_CHANGE, or OTHER_SECURITY."
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "codemender, sandbox, or cloud_audit."
+  },
+  {
+    "name": "severity",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Finding severity for CodeMender events, LogEntry severity otherwise."
+  },
+  {
+    "name": "project_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "GCP project that produced the log entry."
+  },
+  {
+    "name": "resource_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Monitored resource type, e.g. cloud_run_job, project."
+  },
+  {
+    "name": "resource_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Affected resource: audit resourceName, sandbox job name, or CodeMender file path."
+  },
+  {
+    "name": "principal",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Audit log principalEmail."
+  },
+  {
+    "name": "repository",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "GitHub repository as owner/name."
+  },
+  {
+    "name": "commit_sha",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Git commit SHA."
+  },
+  {
+    "name": "issue_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "CodeMender issue ID, e.g. CM-0001."
+  },
+  {
+    "name": "session_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "CodeMender session ID."
+  },
+  {
+    "name": "run_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Sandbox run ID."
+  },
+  {
+    "name": "status",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Event status. For SANDBOX_RESULT this is the verdict."
+  },
+  {
+    "name": "summary",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "One-line human-readable summary."
+  },
+  {
+    "name": "log_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Full LogEntry logName."
+  },
+  {
+    "name": "raw_payload",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Full LogEntry as JSON text, capped at 100 KB (oversized entries are wrapped as {truncated, original_bytes, prefix})."
+  }
+]

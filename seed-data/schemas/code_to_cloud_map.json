@@ -1,0 +1,57 @@
+[
+  {
+    "name": "resource_id",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "resource_name",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "cloud_platform",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "image",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "image_digest",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "base_image",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "repository",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "dockerfile_path",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "terraform_path",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "commit_sha",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "updated_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE"
+  }
+]

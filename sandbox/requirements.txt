@@ -1,0 +1,8 @@
+# Baked into the sandbox image at build time (no egress at runtime).
+# Test runner for PoC and unit tests
+pytest==8.3.3
+# Sample app (payment-service) runtime dependency
+flask==3.0.3
+# Reading inputs from GCS with the job's service account
+google-auth==2.35.0
+requests==2.32.3

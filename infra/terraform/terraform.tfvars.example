@@ -1,0 +1,30 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is git-ignored.
+# Placeholders only. Never put secret values here; secrets go into
+# Secret Manager with gcloud (see secrets.tf).
+
+project_id  = "your-gcp-project-id"
+region      = "us-central1"
+github_org  = "your-github-org"
+github_repo = "payment-service"
+
+participant_members = [
+  "user:participant1@example.com",
+  "group:security-lab-participants@example.com",
+]
+
+# Wiz (optional). The client secret goes into Secret Manager, not here.
+wiz_client_id    = ""
+wiz_api_endpoint = "" # e.g. https://api.<region>.app.wiz.io/graphql (confirm in your environment)
+
+# Images. Leave empty to use REGION-docker.pkg.dev/PROJECT/security-lab/<name>:<image_tag>.
+image_tag           = "latest"
+mcp_server_image    = ""
+log_ingestion_image = ""
+sandbox_image       = ""
+
+# Phase 1: false (APIs, Artifact Registry, data, network, IAM). Phase 2: true.
+deploy_services = false
+
+# SCC export is org-level. Leave scc_organization_id empty to skip it.
+enable_scc_export   = true
+scc_organization_id = "" # e.g. "123456789012"

@@ -1,0 +1,5 @@
+google-adk>=2.10
+google-cloud-aiplatform[agent_engines,adk]
+google-auth
+httpx
+pyyaml

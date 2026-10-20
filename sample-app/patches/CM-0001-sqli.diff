@@ -1,0 +1,18 @@
+--- a/app/db.py
++++ b/app/db.py
+@@ -67,12 +67,12 @@
+     """Return the transactions for one account as a list of dicts."""
+     conn = _connect(db_path)
+     try:
+-        # VULNERABLE (CWE-89): user input is interpolated into the SQL text.
++        # Parameterized query: the driver binds account as data, never as SQL.
+         query = (
+             "SELECT id, account, amount_cents, currency, merchant, created_at "
+-            f"FROM transactions WHERE account = '{account}' ORDER BY id"
++            "FROM transactions WHERE account = ? ORDER BY id"
+         )
+-        rows = conn.execute(query).fetchall()
++        rows = conn.execute(query, (account,)).fetchall()
+         return [dict(row) for row in rows]
+     finally:
+         conn.close()

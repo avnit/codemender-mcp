@@ -1,0 +1,24 @@
+# Local Terraform working directory
+.terraform/
+
+# State (contains resource details; keep it out of git)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Variable files can contain environment-specific values
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Crash logs and plan files
+crash.log
+crash.*.log
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# .terraform.lock.hcl is NOT ignored. Commit it so everyone uses the same
+# provider versions.

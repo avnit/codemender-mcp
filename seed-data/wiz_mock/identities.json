@@ -1,0 +1,47 @@
+{
+  "_comment": "Illustrative Wiz GraphQL-shaped response for facilitators and offline testing. Not captured from a real tenant. Field names and enum values: verify against your tenant's schema. Shape follows a graphSearch query for service accounts with excessive permissions.",
+  "data": {
+    "graphSearch": {
+      "totalCount": 1,
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": null
+      },
+      "nodes": [
+        {
+          "entities": [
+            {
+              "id": "wiz-entity-sa-payment-service-sa",
+              "name": "payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com",
+              "type": "SERVICE_ACCOUNT",
+              "properties": {
+                "externalId": "//iam.googleapis.com/projects/your-gcp-project-id/serviceAccounts/payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com",
+                "cloudPlatform": "GCP",
+                "subscriptionExternalId": "your-gcp-project-id",
+                "roles": [
+                  "roles/editor"
+                ],
+                "grantedAt": "2026-10-08T18:22:41Z",
+                "excessivePermissions": true,
+                "unusedPermissionsPercent": 99,
+                "usedServices": [
+                  "storage.googleapis.com"
+                ]
+              }
+            },
+            {
+              "id": "wiz-entity-cloudrun-payment-service",
+              "name": "payment-service",
+              "type": "CONTAINER_SERVICE",
+              "properties": {
+                "externalId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service",
+                "isPubliclyExposed": true,
+                "serviceAccount": "payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

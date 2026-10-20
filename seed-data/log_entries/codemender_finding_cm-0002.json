@@ -1,0 +1,33 @@
+{
+  "insertId": "sample-codemender-cm-0002",
+  "logName": "projects/your-gcp-project-id/logs/codemender",
+  "resource": {
+    "type": "global",
+    "labels": {
+      "project_id": "your-gcp-project-id"
+    }
+  },
+  "timestamp": "2026-10-14T15:11:40Z",
+  "receiveTimestamp": "2026-10-14T15:11:41Z",
+  "severity": "ERROR",
+  "jsonPayload": {
+    "event_type": "CODEMENDER_FINDING",
+    "issue_id": "CM-0002",
+    "finding_id": "CM-0002",
+    "session_id": "cm-session-20261014-01",
+    "repository": "your-github-org/payment-service",
+    "commit_sha": "3f2a9c1d8e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b",
+    "severity": "HIGH",
+    "cwe_id": "CWE-22",
+    "vulnerability_type": "PATH_TRAVERSAL",
+    "file_path": "app/receipts.py",
+    "line_number": 27,
+    "title": "Path traversal in receipt download",
+    "description": "/api/receipts joins the 'file' query parameter to the receipts directory without normalising it. file=../not_a_secret.txt reads sample-app/data/not_a_secret.txt outside the receipts directory.",
+    "status": "DETECTED",
+    "patch_ref": null,
+    "pr_url": null,
+    "wiz_issue_id": "wiz-issue-0002",
+    "message": "CM-0002 Path traversal in receipt download (app/receipts.py)"
+  }
+}

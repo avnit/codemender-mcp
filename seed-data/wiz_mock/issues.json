@@ -1,0 +1,176 @@
+{
+  "_comment": "Illustrative Wiz GraphQL-shaped response for facilitators and offline testing. Not captured from a real tenant. Field names and enum values: verify against your tenant's schema.",
+  "_lab_mapping": {
+    "wiz-issue-0001": "CM-0001",
+    "wiz-issue-0002": "CM-0002",
+    "wiz-issue-0003": "CM-0003",
+    "wiz-issue-0004": "CM-0004"
+  },
+  "data": {
+    "issuesV2": {
+      "nodes": [
+        {
+          "id": "wiz-issue-0001",
+          "type": "TOXIC_COMBINATION",
+          "status": "OPEN",
+          "severity": "CRITICAL",
+          "createdAt": "2026-10-13T21:10:00Z",
+          "updatedAt": "2026-10-14T15:20:00Z",
+          "resolvedAt": null,
+          "dueAt": null,
+          "statusChangedAt": "2026-10-13T21:10:00Z",
+          "sourceRule": {
+            "__typename": "Control",
+            "id": "wiz-rule-0001",
+            "name": "Publicly exposed Cloud Run service with a critical SQL injection code finding",
+            "controlDescription": "payment-service is reachable from the internet (allUsers run.invoker) and its source repository your-github-org/payment-service has a SQL injection in app/db.py (CodeMender CM-0001).",
+            "resolutionRecommendation": "Use parameterised queries in app/db.py; restrict ingress if public access is not required."
+          },
+          "entitySnapshot": {
+            "id": "wiz-entity-cloudrun-payment-service",
+            "type": "CONTAINER_SERVICE",
+            "nativeType": "run.googleapis.com/Service",
+            "name": "payment-service",
+            "status": "Active",
+            "cloudPlatform": "GCP",
+            "providerId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service",
+            "region": "us-central1",
+            "resourceGroupExternalId": null,
+            "subscriptionExternalId": "your-gcp-project-id",
+            "subscriptionName": "your-gcp-project-id",
+            "externalId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service"
+          },
+          "projects": [
+            {
+              "id": "wiz-project-security-lab",
+              "name": "security-lab"
+            }
+          ],
+          "serviceTickets": []
+        },
+        {
+          "id": "wiz-issue-0002",
+          "type": "TOXIC_COMBINATION",
+          "status": "OPEN",
+          "severity": "HIGH",
+          "createdAt": "2026-10-13T21:10:00Z",
+          "updatedAt": "2026-10-14T15:20:00Z",
+          "resolvedAt": null,
+          "dueAt": null,
+          "statusChangedAt": "2026-10-13T21:10:00Z",
+          "sourceRule": {
+            "__typename": "Control",
+            "id": "wiz-rule-0002",
+            "name": "Publicly exposed Cloud Run service with a path traversal code finding",
+            "controlDescription": "payment-service is internet-facing and app/receipts.py allows path traversal through the 'file' parameter (CodeMender CM-0002).",
+            "resolutionRecommendation": "Resolve the requested path and reject anything outside the receipts directory."
+          },
+          "entitySnapshot": {
+            "id": "wiz-entity-cloudrun-payment-service",
+            "type": "CONTAINER_SERVICE",
+            "nativeType": "run.googleapis.com/Service",
+            "name": "payment-service",
+            "status": "Active",
+            "cloudPlatform": "GCP",
+            "providerId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service",
+            "region": "us-central1",
+            "resourceGroupExternalId": null,
+            "subscriptionExternalId": "your-gcp-project-id",
+            "subscriptionName": "your-gcp-project-id",
+            "externalId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service"
+          },
+          "projects": [
+            {
+              "id": "wiz-project-security-lab",
+              "name": "security-lab"
+            }
+          ],
+          "serviceTickets": []
+        },
+        {
+          "id": "wiz-issue-0003",
+          "type": "CLOUD_CONFIGURATION",
+          "status": "OPEN",
+          "severity": "HIGH",
+          "createdAt": "2026-10-13T21:12:00Z",
+          "updatedAt": "2026-10-14T15:20:00Z",
+          "resolvedAt": null,
+          "dueAt": null,
+          "statusChangedAt": "2026-10-13T21:12:00Z",
+          "sourceRule": {
+            "__typename": "CloudConfigurationRule",
+            "id": "wiz-rule-0003",
+            "name": "Service account attached to an internet-facing workload has a primitive role",
+            "cloudConfigurationRuleDescription": "payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com has roles/editor on project your-gcp-project-id and is the runtime identity of payment-service (CodeMender CM-0003, terraform/main.tf).",
+            "remediationInstructions": "Replace roles/editor with roles/storage.objectViewer on the receipts bucket."
+          },
+          "entitySnapshot": {
+            "id": "wiz-entity-sa-payment-service-sa",
+            "type": "SERVICE_ACCOUNT",
+            "nativeType": "iam.googleapis.com/ServiceAccount",
+            "name": "payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com",
+            "status": "Active",
+            "cloudPlatform": "GCP",
+            "providerId": "//iam.googleapis.com/projects/your-gcp-project-id/serviceAccounts/payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com",
+            "region": "global",
+            "resourceGroupExternalId": null,
+            "subscriptionExternalId": "your-gcp-project-id",
+            "subscriptionName": "your-gcp-project-id",
+            "externalId": "//iam.googleapis.com/projects/your-gcp-project-id/serviceAccounts/payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com"
+          },
+          "projects": [
+            {
+              "id": "wiz-project-security-lab",
+              "name": "security-lab"
+            }
+          ],
+          "serviceTickets": []
+        },
+        {
+          "id": "wiz-issue-0004",
+          "type": "TOXIC_COMBINATION",
+          "status": "OPEN",
+          "severity": "CRITICAL",
+          "createdAt": "2026-10-13T21:15:00Z",
+          "updatedAt": "2026-10-14T15:20:00Z",
+          "resolvedAt": null,
+          "dueAt": null,
+          "statusChangedAt": "2026-10-13T21:15:00Z",
+          "sourceRule": {
+            "__typename": "Control",
+            "id": "wiz-rule-0004",
+            "name": "Publicly exposed container service running an image with a critical vulnerability",
+            "controlDescription": "payment-service runs image payment-service@sha256:382e053a5fbe478f985d6e5c67a1846c6c2196720fc44d457e3b83dee74980af built from python:3.8-slim-buster, which contains CVE-2022-37434 (zlib1g, CVSS 9.8) (CodeMender CM-0004, Dockerfile).",
+            "resolutionRecommendation": "Rebuild from a supported base image such as python:3.12-slim and redeploy."
+          },
+          "entitySnapshot": {
+            "id": "wiz-entity-cloudrun-payment-service",
+            "type": "CONTAINER_SERVICE",
+            "nativeType": "run.googleapis.com/Service",
+            "name": "payment-service",
+            "status": "Active",
+            "cloudPlatform": "GCP",
+            "providerId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service",
+            "region": "us-central1",
+            "resourceGroupExternalId": null,
+            "subscriptionExternalId": "your-gcp-project-id",
+            "subscriptionName": "your-gcp-project-id",
+            "externalId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service"
+          },
+          "projects": [
+            {
+              "id": "wiz-project-security-lab",
+              "name": "security-lab"
+            }
+          ],
+          "serviceTickets": []
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": null
+      },
+      "totalCount": 4
+    }
+  }
+}

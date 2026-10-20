@@ -1,0 +1,306 @@
+# Validate a candidate patch in the isolated sandbox (Cloud Run Job `codemender-sandbox`).
+#
+# Give exactly one of:
+#   patch_path  a unified diff committed in this repo (path relative to the repo root,
+#               read from the ref the workflow runs on), or
+#   branch      a branch on origin; the patch is `git diff <commit_sha>...origin/<branch>`.
+#
+# The job always runs against the base commit (commit_sha). Flow:
+#   1. stage source  gs://<SANDBOX_BUCKET>/sources/<owner>__<name>/<commit_sha>.tar.gz (if missing)
+#   2. upload patch  gs://<SANDBOX_BUCKET>/patches/<issue_id>/<run_id>.diff
+#   3. gcloud run jobs execute codemender-sandbox --update-env-vars ... --wait
+#   4. read the SANDBOX_RESULT log entry whose jsonPayload.run_id matches this run
+#   5. write the job summary; comment on the open PR for `branch` if there is one
+#
+# Note: Cloud Run Jobs run only on the second-generation execution environment
+# (microVM sandbox). gVisor (gen1) is not available for jobs.
+#
+# IAM: step 4 uses `gcloud logging read`, which needs roles/logging.viewer (or
+# roles/logging.privateLogViewer) for github-actions-sa in addition to the roles in
+# NAMING.md. Confirm in your environment.
+#
+# Actions are pinned to major versions for readability. For production, pin
+# every action to a full commit SHA.
+
+name: sandbox-validate
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_id:
+        description: "CodeMender issue ID, e.g. CM-0001"
+        type: string
+        required: true
+      commit_sha:
+        description: "Base commit the patch applies to"
+        type: string
+        required: true
+      patch_path:
+        description: "Path to a .diff file in this repo (leave empty if using branch)"
+        type: string
+        required: false
+        default: ""
+      branch:
+        description: "Branch containing the fix; patch = git diff commit_sha...origin/branch (leave empty if using patch_path)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: sandbox-validate-${{ inputs.issue_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ISSUE_ID: ${{ inputs.issue_id }}
+      INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+      PATCH_PATH: ${{ inputs.patch_path }}
+      BRANCH: ${{ inputs.branch }}
+      REPOSITORY: ${{ github.repository }}
+      RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      SANDBOX_BUCKET: ${{ vars.SANDBOX_BUCKET }}
+      SANDBOX_JOB_NAME: codemender-sandbox
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if [ -n "$PATCH_PATH" ] && [ -n "$BRANCH" ]; then
+            echo "::error::Give exactly one of patch_path or branch, not both."; exit 1
+          fi
+          if [ -z "$PATCH_PATH" ] && [ -z "$BRANCH" ]; then
+            echo "::error::Give exactly one of patch_path or branch. Both are empty."; exit 1
+          fi
+          if ! printf '%s' "$ISSUE_ID" | grep -Eq '^[A-Za-z0-9._-]{1,64}$'; then
+            echo "::error::issue_id may contain only letters, digits, '.', '_' and '-' (e.g. CM-0001)."; exit 1
+          fi
+          if ! printf '%s' "$INPUT_COMMIT_SHA" | grep -Eq '^[0-9a-fA-F]{7,40}$'; then
+            echo "::error::commit_sha must be 7-40 hex characters."; exit 1
+          fi
+          if [ -n "$BRANCH" ]; then
+            if [[ "$BRANCH" == -* ]] || ! git check-ref-format --branch "$BRANCH" > /dev/null 2>&1; then
+              echo "::error::branch is not a valid branch name."; exit 1
+            fi
+          fi
+          if [ -n "$PATCH_PATH" ]; then
+            case "$PATCH_PATH" in
+              /*|*..*|-*) echo "::error::patch_path must be a relative path inside the repo without '..'."; exit 1 ;;
+            esac
+          fi
+          for v in GCP_PROJECT_ID GCP_REGION SANDBOX_BUCKET; do
+            if [ -z "${!v}" ]; then echo "::error::Repository variable $v is not set."; exit 1; fi
+          done
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve commit and build patch
+        id: prep
+        run: |
+          set -euo pipefail
+          full_sha="$(git rev-parse --verify "${INPUT_COMMIT_SHA}^{commit}")" \
+            || { echo "::error::commit_sha not found in the repository."; exit 1; }
+          patch_file="$RUNNER_TEMP/patch.diff"
+          if [ -n "$BRANCH" ]; then
+            git fetch --no-tags origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" \
+              || { echo "::error::Branch not found on origin."; exit 1; }
+            git diff --binary "${full_sha}...origin/${BRANCH}" > "$patch_file"
+            patch_source="branch ${BRANCH}"
+          else
+            real="$(realpath -e -- "$PATCH_PATH" 2>/dev/null)" \
+              || { echo "::error::patch_path does not exist on this ref."; exit 1; }
+            case "$real" in
+              "$GITHUB_WORKSPACE"/*) ;;
+              *) echo "::error::patch_path resolves outside the repository."; exit 1 ;;
+            esac
+            cp -- "$real" "$patch_file"
+            patch_source="file ${PATCH_PATH}"
+          fi
+          if [ ! -s "$patch_file" ]; then
+            echo "::error::The patch is empty (no changes between commit_sha and the fix)."; exit 1
+          fi
+          # PoC to run: the one for this issue if known, else the whole PoC directory.
+          case "$ISSUE_ID" in
+            CM-0001) poc_test="tests/poc/test_poc_sqli.py" ;;
+            CM-0002) poc_test="tests/poc/test_poc_path_traversal.py" ;;
+            *)       poc_test="tests/poc" ;;
+          esac
+          source_uri="gs://${SANDBOX_BUCKET}/sources/${REPOSITORY/\//__}/${full_sha}.tar.gz"
+          patch_uri="gs://${SANDBOX_BUCKET}/patches/${ISSUE_ID}/${RUN_ID}.diff"
+          {
+            echo "commit_sha=${full_sha}"
+            echo "patch_file=${patch_file}"
+            echo "patch_source=${patch_source}"
+            echo "poc_test=${poc_test}"
+            echo "source_uri=${source_uri}"
+            echo "patch_uri=${patch_uri}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Patch: $(wc -l < "$patch_file") lines from ${patch_source}"
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Stage source tarball and upload patch
+        env:
+          COMMIT_SHA: ${{ steps.prep.outputs.commit_sha }}
+          SOURCE_URI: ${{ steps.prep.outputs.source_uri }}
+          PATCH_URI: ${{ steps.prep.outputs.patch_uri }}
+          PATCH_FILE: ${{ steps.prep.outputs.patch_file }}
+        run: |
+          set -euo pipefail
+          if gcloud storage objects describe "$SOURCE_URI" --project="$GCP_PROJECT_ID" > /dev/null 2>&1; then
+            echo "Source tarball already staged: $SOURCE_URI"
+          else
+            tarball="$RUNNER_TEMP/source.tar.gz"
+            git archive --format=tar.gz -o "$tarball" "$COMMIT_SHA"
+            gcloud storage cp "$tarball" "$SOURCE_URI" --project="$GCP_PROJECT_ID"
+            echo "Staged $SOURCE_URI"
+          fi
+          gcloud storage cp "$PATCH_FILE" "$PATCH_URI" --project="$GCP_PROJECT_ID"
+          echo "Uploaded $PATCH_URI"
+
+      - name: Run sandbox job
+        id: run
+        env:
+          COMMIT_SHA: ${{ steps.prep.outputs.commit_sha }}
+          SOURCE_URI: ${{ steps.prep.outputs.source_uri }}
+          PATCH_URI: ${{ steps.prep.outputs.patch_uri }}
+          POC_TEST: ${{ steps.prep.outputs.poc_test }}
+        run: |
+          set -uo pipefail
+          # All values are validated above and contain no commas, so the default
+          # comma delimiter for --update-env-vars is safe.
+          env_vars="RUN_ID=${RUN_ID},REPOSITORY=${REPOSITORY},COMMIT_SHA=${COMMIT_SHA},SOURCE_URI=${SOURCE_URI},PATCH_URI=${PATCH_URI},ISSUE_ID=${ISSUE_ID},POC_TEST=${POC_TEST}"
+          exec_name="$(gcloud run jobs execute "$SANDBOX_JOB_NAME" \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" \
+            --update-env-vars="$env_vars" \
+            --wait --format='value(metadata.name)')"
+          rc=$?
+          echo "execution_name=${exec_name}" >> "$GITHUB_OUTPUT"
+          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
+          echo "Execution: ${exec_name:-unknown} (gcloud exit ${rc})"
+          # Do not fail here; the result step reads the SANDBOX_RESULT log entry
+          # and decides. A non-zero exit is reported there.
+          exit 0
+
+      - name: Read SANDBOX_RESULT
+        id: result
+        run: |
+          set -euo pipefail
+          result_file="$RUNNER_TEMP/result.json"
+          filter="resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"${SANDBOX_JOB_NAME}\" AND jsonPayload.event_type=\"SANDBOX_RESULT\" AND jsonPayload.run_id=\"${RUN_ID}\""
+          # Log entries can take a short while to become readable.
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            gcloud logging read "$filter" --project="$GCP_PROJECT_ID" \
+              --freshness=2h --limit=1 --order=desc --format=json > "$result_file.raw" || true
+            if jq -e 'length > 0' "$result_file.raw" > /dev/null 2>&1; then
+              jq '.[0].jsonPayload' "$result_file.raw" > "$result_file"
+              break
+            fi
+            echo "SANDBOX_RESULT for run_id=${RUN_ID} not found yet (attempt ${attempt}); waiting 10s"
+            sleep 10
+          done
+          if [ -s "$result_file" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "verdict=$(jq -r '.verdict // "ERROR"' "$result_file")" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "verdict=ERROR" >> "$GITHUB_OUTPUT"
+          fi
+          echo "result_file=${result_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary
+        id: summary
+        if: always() && steps.prep.outcome == 'success'
+        env:
+          COMMIT_SHA: ${{ steps.prep.outputs.commit_sha }}
+          PATCH_URI: ${{ steps.prep.outputs.patch_uri }}
+          PATCH_SOURCE: ${{ steps.prep.outputs.patch_source }}
+          POC_TEST: ${{ steps.prep.outputs.poc_test }}
+          EXECUTION_NAME: ${{ steps.run.outputs.execution_name }}
+          GCLOUD_EXIT: ${{ steps.run.outputs.exit_code }}
+          FOUND: ${{ steps.result.outputs.found }}
+          VERDICT: ${{ steps.result.outputs.verdict }}
+          RESULT_FILE: ${{ steps.result.outputs.result_file }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/summary.md"
+          {
+            echo "## Sandbox validation: ${ISSUE_ID}"
+            echo ""
+            echo "**Verdict: ${VERDICT:-ERROR}**"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| run_id | \`${RUN_ID}\` |"
+            echo "| execution | \`${EXECUTION_NAME:-unknown}\` (gcloud exit ${GCLOUD_EXIT:-n/a}) |"
+            echo "| repository | \`${REPOSITORY}\` |"
+            echo "| base commit | \`${COMMIT_SHA}\` |"
+            echo "| patch | ${PATCH_SOURCE} -> \`${PATCH_URI}\` |"
+            echo "| poc_test | \`${POC_TEST}\` |"
+            if [ "${FOUND:-false}" = "true" ]; then
+              jq -r '"| poc_before | \(.poc_before // "") |",
+                     "| poc_after | \(.poc_after // "") |",
+                     "| patch_applied | \(.patch_applied // "") |",
+                     "| unit_tests_passed | \(.unit_tests_passed // "") |",
+                     "| tests_total / tests_failed | \(.tests_total // "") / \(.tests_failed // "") |"' "$RESULT_FILE"
+              echo ""
+              echo "<details><summary>log_excerpt</summary>"
+              echo ""
+              echo '```'
+              jq -r '.log_excerpt // "" | .[0:4000]' "$RESULT_FILE" | sed 's/```/` ` `/g'
+              echo '```'
+              echo "</details>"
+            else
+              echo ""
+              echo "No SANDBOX_RESULT log entry with run_id \`${RUN_ID}\` was found. Check the job execution logs in Cloud Logging."
+            fi
+            echo ""
+            echo "_Merging still requires human review and approval (CODEOWNERS + branch protection)._"
+          } > "$body"
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"
+          echo "body_file=${body}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on pull request
+        if: always() && inputs.branch != '' && steps.summary.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BODY_FILE: ${{ steps.summary.outputs.body_file }}
+        run: |
+          set -euo pipefail
+          pr="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$pr" ]; then
+            gh pr comment "$pr" --repo "$REPOSITORY" --body-file "$BODY_FILE"
+            echo "Commented on PR #$pr"
+          else
+            echo "No open PR for branch; result is in the job summary only."
+          fi
+
+      - name: Fail unless patch verified
+        if: always() && steps.prep.outcome == 'success'
+        env:
+          VERDICT: ${{ steps.result.outputs.verdict }}
+        run: |
+          if [ "${VERDICT:-ERROR}" != "PATCH_VERIFIED" ]; then
+            echo "::error::Sandbox verdict is ${VERDICT:-ERROR}, not PATCH_VERIFIED."
+            exit 1
+          fi
+          echo "Sandbox verdict: PATCH_VERIFIED"

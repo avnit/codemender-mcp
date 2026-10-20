@@ -1,0 +1,68 @@
+[
+  {
+    "name": "resource_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Full cloud resource ID."
+  },
+  {
+    "name": "resource_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Resource display name."
+  },
+  {
+    "name": "cloud_platform",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Cloud platform, e.g. GCP."
+  },
+  {
+    "name": "image",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Container image URI."
+  },
+  {
+    "name": "image_digest",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Image digest."
+  },
+  {
+    "name": "base_image",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Base image from the Dockerfile."
+  },
+  {
+    "name": "repository",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Source repository as owner/name."
+  },
+  {
+    "name": "dockerfile_path",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Dockerfile path in the repository."
+  },
+  {
+    "name": "terraform_path",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Terraform file defining the resource."
+  },
+  {
+    "name": "commit_sha",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Commit the image was built from."
+  },
+  {
+    "name": "updated_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Last update time."
+  }
+]

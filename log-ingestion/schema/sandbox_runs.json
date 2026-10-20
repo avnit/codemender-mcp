@@ -1,0 +1,104 @@
+[
+  {
+    "name": "run_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Sandbox run ID."
+  },
+  {
+    "name": "execution_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Cloud Run Job execution name."
+  },
+  {
+    "name": "repository",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "GitHub repository as owner/name."
+  },
+  {
+    "name": "commit_sha",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Commit the patch was applied to."
+  },
+  {
+    "name": "patch_ref",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "gs:// URI of the patch under test."
+  },
+  {
+    "name": "issue_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "CodeMender issue ID."
+  },
+  {
+    "name": "poc_test",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Proof-of-concept test path."
+  },
+  {
+    "name": "started_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Run start time."
+  },
+  {
+    "name": "finished_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Run end time."
+  },
+  {
+    "name": "poc_before",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "EXPLOITABLE, NOT_EXPLOITABLE, or ERROR before the patch."
+  },
+  {
+    "name": "poc_after",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "EXPLOITABLE, NOT_EXPLOITABLE, or ERROR after the patch."
+  },
+  {
+    "name": "patch_applied",
+    "type": "BOOL",
+    "mode": "NULLABLE",
+    "description": "Whether the patch applied cleanly."
+  },
+  {
+    "name": "unit_tests_passed",
+    "type": "BOOL",
+    "mode": "NULLABLE",
+    "description": "Whether the unit tests passed after the patch."
+  },
+  {
+    "name": "tests_total",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Number of unit tests run."
+  },
+  {
+    "name": "tests_failed",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Number of unit tests that failed."
+  },
+  {
+    "name": "verdict",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "PATCH_VERIFIED, PATCH_FAILED, POC_NOT_REPRODUCED, or ERROR."
+  },
+  {
+    "name": "log_excerpt",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Tail of the sandbox output."
+  }
+]

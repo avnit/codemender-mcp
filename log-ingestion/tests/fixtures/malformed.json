@@ -1,0 +1,5 @@
+{
+  "note": "Valid JSON but not a usable LogEntry: no insertId and no parseable timestamp.",
+  "timestamp": "not-a-timestamp",
+  "jsonPayload": {"event_type": "CODEMENDER_FINDING", "finding_id": "CM-9999"}
+}

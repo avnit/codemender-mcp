@@ -1,0 +1,9 @@
+.env
+.env.*
+tests/
+egress-check/
+*.sh
+job.yaml
+README.md
+**/__pycache__
+**/*.pyc

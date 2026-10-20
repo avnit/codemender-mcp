@@ -1,0 +1,32 @@
+[
+  {
+    "name": "received_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Time the message was received."
+  },
+  {
+    "name": "message_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Pub/Sub message ID."
+  },
+  {
+    "name": "insert_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "LogEntry insertId, if parseable."
+  },
+  {
+    "name": "error",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Parse or processing error."
+  },
+  {
+    "name": "raw_message",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Raw message data."
+  }
+]

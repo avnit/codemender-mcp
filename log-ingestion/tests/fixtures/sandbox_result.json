@@ -1,0 +1,40 @@
+{
+  "insertId": "sandbox-result-0001",
+  "logName": "projects/your-gcp-project-id/logs/run.googleapis.com%2Fstdout",
+  "resource": {
+    "type": "cloud_run_job",
+    "labels": {
+      "project_id": "your-gcp-project-id",
+      "job_name": "codemender-sandbox",
+      "location": "us-central1"
+    }
+  },
+  "labels": {
+    "run.googleapis.com/execution_name": "codemender-sandbox-abc12",
+    "run.googleapis.com/task_index": "0"
+  },
+  "severity": "INFO",
+  "timestamp": "2026-10-20T15:20:30.500Z",
+  "jsonPayload": {
+    "message": "Sandbox verdict PATCH_VERIFIED for CM-0001",
+    "event_type": "SANDBOX_RESULT",
+    "run_id": "run-20261020-0001",
+    "execution_name": "codemender-sandbox-abc12",
+    "repository": "your-github-org/payment-service",
+    "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+    "patch_ref": "gs://your-gcp-project-id-sandbox-inputs/patches/CM-0001/run-20261020-0001.diff",
+    "issue_id": "CM-0001",
+    "poc_test": "tests/poc",
+    "started_at": "2026-10-20T15:19:00Z",
+    "finished_at": "2026-10-20T15:20:29Z",
+    "poc_before": "EXPLOITABLE",
+    "poc_after": "not_exploitable",
+    "patch_applied": "true",
+    "unit_tests_passed": true,
+    "tests_total": "12",
+    "tests_failed": 0,
+    "verdict": "PATCH_VERIFIED",
+    "log_excerpt": "12 passed in 3.21s",
+    "logging.googleapis.com/labels": {"component": "codemender-sandbox"}
+  }
+}

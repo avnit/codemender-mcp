@@ -1,0 +1,111 @@
+[
+  {
+    "name": "finding_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "source_id",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "event_time",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "finding",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "parent",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "resource_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "state",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "category",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "severity",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "finding_class",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "external_uri",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "description",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "event_time",
+        "type": "TIMESTAMP",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "create_time",
+        "type": "TIMESTAMP",
+        "mode": "NULLABLE"
+      }
+    ]
+  },
+  {
+    "name": "resource",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      {
+        "name": "name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "type",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "project_display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "parent_display_name",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      }
+    ]
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "insertId": "cm-patch-0001",
+  "logName": "projects/your-gcp-project-id/logs/codemender",
+  "resource": {
+    "type": "global",
+    "labels": {"project_id": "your-gcp-project-id"}
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-10-20T15:10:00Z",
+  "jsonPayload": {
+    "event_type": "CODEMENDER_PATCH",
+    "message": "Patch generated for CM-0001",
+    "finding_id": "CM-0001",
+    "issue_id": "CM-0001",
+    "session_id": "session-20261020-01",
+    "repository": "your-github-org/payment-service",
+    "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+    "file_path": "app/db.py",
+    "status": "PATCH_GENERATED",
+    "patch_ref": "gs://your-gcp-project-id-sandbox-inputs/patches/CM-0001/run-20261020-0001.diff"
+  }
+}

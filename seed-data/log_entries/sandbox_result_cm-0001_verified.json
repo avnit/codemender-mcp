@@ -1,0 +1,42 @@
+{
+  "insertId": "sample-sandbox-sbx-run-0002",
+  "logName": "projects/your-gcp-project-id/logs/run.googleapis.com%2Fstdout",
+  "resource": {
+    "type": "cloud_run_job",
+    "labels": {
+      "job_name": "codemender-sandbox",
+      "location": "us-central1",
+      "project_id": "your-gcp-project-id"
+    }
+  },
+  "labels": {
+    "component": "codemender-sandbox",
+    "run.googleapis.com/execution_name": "codemender-sandbox-m3d9t",
+    "run.googleapis.com/task_index": "0",
+    "run.googleapis.com/task_attempt": "0"
+  },
+  "timestamp": "2026-10-14T16:46:13Z",
+  "receiveTimestamp": "2026-10-14T16:46:15Z",
+  "severity": "INFO",
+  "jsonPayload": {
+    "message": "Sandbox run sbx-run-0002 for CM-0001: PATCH_VERIFIED",
+    "event_type": "SANDBOX_RESULT",
+    "run_id": "sbx-run-0002",
+    "execution_name": "codemender-sandbox-m3d9t",
+    "repository": "your-github-org/payment-service",
+    "commit_sha": "3f2a9c1d8e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b",
+    "patch_ref": "gs://your-gcp-project-id-sandbox-inputs/patches/CM-0001/sbx-run-0002.diff",
+    "issue_id": "CM-0001",
+    "poc_test": "tests/poc",
+    "started_at": "2026-10-14T16:40:00Z",
+    "finished_at": "2026-10-14T16:46:12Z",
+    "poc_before": "EXPLOITABLE",
+    "poc_after": "NOT_EXPLOITABLE",
+    "patch_applied": true,
+    "unit_tests_passed": true,
+    "tests_total": 12,
+    "tests_failed": 0,
+    "verdict": "PATCH_VERIFIED",
+    "log_excerpt": "PoC before: EXPLOITABLE. Patch applied (parameterised query). PoC after: NOT_EXPLOITABLE. Unit tests: 12 passed."
+  }
+}

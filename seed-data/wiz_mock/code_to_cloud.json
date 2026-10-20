@@ -1,0 +1,52 @@
+{
+  "_comment": "Illustrative Wiz GraphQL-shaped response for facilitators and offline testing. Not captured from a real tenant. Field names and enum values: verify against your tenant's schema. Shape follows a graphSearch query from a repository to the cloud resources built from it (Wiz Code to Cloud).",
+  "data": {
+    "graphSearch": {
+      "totalCount": 1,
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": null
+      },
+      "nodes": [
+        {
+          "entities": [
+            {
+              "id": "wiz-entity-repo-payment-service",
+              "name": "your-github-org/payment-service",
+              "type": "REPOSITORY",
+              "properties": {
+                "url": "https://github.com/your-github-org/payment-service",
+                "defaultBranch": "main",
+                "commitSha": "3f2a9c1d8e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b"
+              }
+            },
+            {
+              "id": "wiz-entity-image-payment-service",
+              "name": "us-central1-docker.pkg.dev/your-gcp-project-id/security-lab/payment-service",
+              "type": "CONTAINER_IMAGE",
+              "properties": {
+                "digest": "sha256:382e053a5fbe478f985d6e5c67a1846c6c2196720fc44d457e3b83dee74980af",
+                "image": "us-central1-docker.pkg.dev/your-gcp-project-id/security-lab/payment-service@sha256:382e053a5fbe478f985d6e5c67a1846c6c2196720fc44d457e3b83dee74980af",
+                "baseImage": "python:3.8-slim-buster",
+                "dockerfilePath": "Dockerfile",
+                "label.org.opencontainers.image.source": "https://github.com/your-github-org/payment-service"
+              }
+            },
+            {
+              "id": "wiz-entity-cloudrun-payment-service",
+              "name": "payment-service",
+              "type": "CONTAINER_SERVICE",
+              "properties": {
+                "externalId": "//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service",
+                "region": "us-central1",
+                "isPubliclyExposed": true,
+                "serviceAccount": "payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com",
+                "terraformPath": "terraform/main.tf"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

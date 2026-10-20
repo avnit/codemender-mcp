@@ -1,0 +1,18 @@
+--- a/app/receipts.py
++++ b/app/receipts.py
+@@ -18,9 +18,12 @@
+ 
+ def read_receipt(name, receipts_dir=None):
+     """Return the text of a receipt file from the receipts directory."""
+-    base = receipts_dir or RECEIPTS_DIR
+-    # VULNERABLE (CWE-22): "../" sequences in name escape the receipts dir.
+-    path = os.path.join(base, name)
++    base = os.path.realpath(receipts_dir or RECEIPTS_DIR)
++    # Resolve "..", symlinks and absolute paths, then require the result to
++    # stay inside the receipts directory.
++    path = os.path.realpath(os.path.join(base, name))
++    if os.path.commonpath([base, path]) != base:
++        raise ReceiptNotFound(name)
+     if not os.path.isfile(path):
+         raise ReceiptNotFound(name)
+     with open(path, encoding="utf-8") as handle:

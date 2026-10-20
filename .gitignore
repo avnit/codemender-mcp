@@ -1,16 +1,37 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
-venv/
-.venv/
-.env
-.env.*
-!.env.example
 .pytest_cache/
 .coverage
 htmlcov/
-*.log
+env/
+venv/
+.venv/
+
+# Secrets and local config: never commit these
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+lab.env
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+
+# Sample app local database
+sample-app/data/*.db
+
+# OS / editor
 .DS_Store
+*.log

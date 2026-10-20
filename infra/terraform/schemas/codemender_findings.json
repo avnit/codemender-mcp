@@ -1,0 +1,110 @@
+[
+  {
+    "name": "finding_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "CodeMender finding ID, e.g. CM-0001."
+  },
+  {
+    "name": "issue_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Issue ID used across tools and logs."
+  },
+  {
+    "name": "session_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "CodeMender scan session ID."
+  },
+  {
+    "name": "repository",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Repository as owner/name."
+  },
+  {
+    "name": "commit_sha",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Commit scanned."
+  },
+  {
+    "name": "file_path",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "File containing the finding."
+  },
+  {
+    "name": "line_number",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Line number of the finding."
+  },
+  {
+    "name": "title",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Short title."
+  },
+  {
+    "name": "description",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Finding description."
+  },
+  {
+    "name": "vulnerability_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Vulnerability class, e.g. SQL Injection."
+  },
+  {
+    "name": "cwe_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "CWE identifier, e.g. CWE-89."
+  },
+  {
+    "name": "severity",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "CRITICAL|HIGH|MEDIUM|LOW."
+  },
+  {
+    "name": "status",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "DETECTED|OPEN|PATCH_GENERATED|VERIFIED|APPLIED|FIXED|FAILED|FALSE_POSITIVE."
+  },
+  {
+    "name": "patch_ref",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Reference to the generated patch (GCS URI or branch)."
+  },
+  {
+    "name": "pr_url",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Pull request URL, if opened."
+  },
+  {
+    "name": "wiz_issue_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Related Wiz issue ID, if any."
+  },
+  {
+    "name": "created_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Creation time. Partition column."
+  },
+  {
+    "name": "updated_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Last update time."
+  }
+]

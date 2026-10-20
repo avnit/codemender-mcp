@@ -1,0 +1,32 @@
+[
+  {
+    "name": "received_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Time the ingestion service received the message."
+  },
+  {
+    "name": "message_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Pub/Sub messageId."
+  },
+  {
+    "name": "insert_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "LogEntry insertId, if it could be read."
+  },
+  {
+    "name": "error",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Why the message could not be ingested."
+  },
+  {
+    "name": "raw_message",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Decoded message data or raw request body, capped at 100 KB."
+  }
+]

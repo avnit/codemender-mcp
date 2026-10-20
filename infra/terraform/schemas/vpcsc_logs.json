@@ -1,0 +1,114 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "LogEntry timestamp."
+  },
+  {
+    "name": "insertId",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "LogEntry insertId."
+  },
+  {
+    "name": "logName",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "LogEntry logName."
+  },
+  {
+    "name": "severity",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "LogEntry severity."
+  },
+  {
+    "name": "resource",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": "Monitored resource.",
+    "fields": [
+      {
+        "name": "type",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "labels",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "project_id",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "service",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          },
+          {
+            "name": "method",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "protopayload_auditlog",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": "Audit log payload (simplified).",
+    "fields": [
+      {
+        "name": "serviceName",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "methodName",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "resourceName",
+        "type": "STRING",
+        "mode": "NULLABLE"
+      },
+      {
+        "name": "authenticationInfo",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "principalEmail",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "requestMetadata",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          {
+            "name": "callerIp",
+            "type": "STRING",
+            "mode": "NULLABLE"
+          }
+        ]
+      },
+      {
+        "name": "metadataJson",
+        "type": "STRING",
+        "mode": "NULLABLE",
+        "description": "JSON text; read violationReason and securityPolicyInfo.servicePerimeterName with JSON_VALUE."
+      }
+    ]
+  }
+]

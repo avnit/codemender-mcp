@@ -1,0 +1,29 @@
+{
+  "insertId": "cm-finding-0001",
+  "logName": "projects/your-gcp-project-id/logs/codemender",
+  "resource": {
+    "type": "global",
+    "labels": {"project_id": "your-gcp-project-id"}
+  },
+  "severity": "WARNING",
+  "timestamp": "2026-10-20T15:04:05.123456789Z",
+  "receiveTimestamp": "2026-10-20T15:04:06.000000000Z",
+  "jsonPayload": {
+    "event_type": "CODEMENDER_FINDING",
+    "message": "SQL injection in app/db.py",
+    "finding_id": "CM-0001",
+    "issue_id": "CM-0001",
+    "session_id": "session-20261020-01",
+    "repository": "your-github-org/payment-service",
+    "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+    "file_path": "app/db.py",
+    "line_number": "42",
+    "title": "SQL injection in get_payment",
+    "description": "User input is concatenated into a SQL query.",
+    "vulnerability_type": "SQL_INJECTION",
+    "cwe_id": "CWE-89",
+    "severity": "critical",
+    "status": "detected",
+    "wiz_issue_id": "wiz-issue-0001"
+  }
+}

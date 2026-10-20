@@ -1,0 +1,39 @@
+{
+  "insertId": "sample-audit-setiampolicy-0001",
+  "logName": "projects/your-gcp-project-id/logs/cloudaudit.googleapis.com%2Factivity",
+  "resource": {
+    "type": "project",
+    "labels": {
+      "project_id": "your-gcp-project-id"
+    }
+  },
+  "timestamp": "2026-10-08T18:22:41Z",
+  "receiveTimestamp": "2026-10-08T18:22:42Z",
+  "severity": "NOTICE",
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "status": {},
+    "authenticationInfo": {
+      "principalEmail": "platform-admin@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "198.51.100.23",
+      "callerSuppliedUserAgent": "Terraform/1.9.5 (+https://www.terraform.io) terraform-provider-google/6.8.0"
+    },
+    "serviceName": "cloudresourcemanager.googleapis.com",
+    "methodName": "SetIamPolicy",
+    "resourceName": "projects/your-gcp-project-id",
+    "serviceData": {
+      "@type": "type.googleapis.com/google.iam.v1.logging.AuditData",
+      "policyDelta": {
+        "bindingDeltas": [
+          {
+            "action": "ADD",
+            "role": "roles/editor",
+            "member": "serviceAccount:payment-service-sa@your-gcp-project-id.iam.gserviceaccount.com"
+          }
+        ]
+      }
+    }
+  }
+}
