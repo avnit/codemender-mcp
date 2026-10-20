@@ -344,24 +344,41 @@ class BigQueryService:
         limit = min(max(1, limit), settings.max_query_limit)
         cleaned = query.strip()
 
-        # Security check: must start with SELECT or WITH
-        if not re.match(r"^(SELECT|WITH)\b", cleaned, re.IGNORECASE):
+        # Security check: must start with SELECT or WITH (ignoring comments)
+        # Strip comments first to find the actual starting statement
+        starting_check = re.sub(r"--.*$", "", cleaned, flags=re.MULTILINE)
+        starting_check = re.sub(r"/\*.*?\*/", "", starting_check, flags=re.DOTALL).strip()
+        if not re.match(r"^(SELECT|WITH)\b", starting_check, re.IGNORECASE):
             return {
                 "error": "Only read-only SELECT or WITH statements are permitted."
             }
 
-        # Check for disallowed DML/DDL keywords
+        # Safe keyword parsing: Strip comments and string literals first to prevent
+        # false positives (keywords inside strings/comments) and prevent bypasses.
+        # -- single line comments
+        no_comments = re.sub(r"--.*$", "", cleaned, flags=re.MULTILINE)
+        # /* multi-line comments */
+        no_comments = re.sub(r"/\*.*?\*/", "", no_comments, flags=re.DOTALL)
+        
+        # Strip string literals (both single and double quotes, handling escaped quotes)
+        no_strings = re.sub(r"'(?:[^'\\]|\\.)*'", " ", no_comments)
+        no_strings = re.sub(r'"(?:[^"\\]|\\.)*"', " ", no_strings)
+
+        # Check for disallowed DML/DDL keywords on the stripped SQL text
         disallowed_keywords = [
             r"\bDELETE\b", r"\bUPDATE\b", r"\bINSERT\b", r"\bDROP\b",
             r"\bALTER\b", r"\bCREATE\b", r"\bTRUNCATE\b", r"\bMERGE\b", r"\bGRANT\b"
         ]
         for pattern in disallowed_keywords:
-            if re.search(pattern, cleaned, re.IGNORECASE):
+            if re.search(pattern, no_strings, re.IGNORECASE):
                 return {"error": f"Query contains disallowed keyword matching {pattern}."}
 
-        # Enforce limit if not already present
-        if not re.search(r"\bLIMIT\s+\d+", cleaned, re.IGNORECASE):
-            cleaned += f" LIMIT {limit}"
+        # Remove trailing semicolon safely before appending LIMIT
+        cleaned = re.sub(r";\s*$", "", cleaned)
+
+        # Enforce limit if not already present (checking no_strings to be safe)
+        if not re.search(r"\bLIMIT\s+\d+", no_strings, re.IGNORECASE):
+            cleaned = f"{cleaned}\nLIMIT {limit}"
 
         try:
             job = self.client.query(cleaned)

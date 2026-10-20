@@ -79,6 +79,22 @@ class TestBigQueryService(unittest.TestCase):
         res_update = service.execute_read_query("UPDATE `test.table` SET status='CLOSED'")
         self.assertIn("error", res_update)
 
+        # Allowed statements with keywords inside string literals (false positive prevention)
+        mock_client = MagicMock()
+        mock_job = MagicMock()
+        mock_job.result.return_value = []
+        mock_client.query.return_value = mock_job
+        service._client = mock_client
+        
+        res_safe_str = service.execute_read_query("SELECT * FROM `test.table` WHERE title = 'This is an UPDATE vulnerability'")
+        self.assertNotIn("error", res_safe_str)
+        
+        res_safe_comment = service.execute_read_query("SELECT * FROM `test.table` -- checking drops")
+        self.assertNotIn("error", res_safe_comment)
+        
+        res_semicolon = service.execute_read_query("SELECT * FROM `test.table`;")
+        self.assertNotIn("error", res_semicolon)
+
 
 class TestLoggingService(unittest.TestCase):
     @patch("services.logging_service.logging_v2.Client")
