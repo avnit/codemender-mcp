@@ -16,8 +16,18 @@ YELLOW="\033[0;33m"
 RED="\033[0;31m"
 RESET="\033[0m"
 
-# Configuration options (can be overridden via environment variables or CLI flags)
-PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || echo "")}"
+# Load settings from .env (same file config.py reads). Override the path with ENV_FILE.
+ENV_FILE="${ENV_FILE:-$(dirname "$0")/.env}"
+if [[ -f "${ENV_FILE}" ]]; then
+  echo "Loading configuration from ${ENV_FILE}"
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  set +a
+fi
+
+# Configuration options (precedence: CLI flags > .env / environment > defaults)
+PROJECT_ID="${PROJECT_ID:-${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || echo "")}}"
 REGION="${REGION:-us-central1}"
 SERVICE_NAME="${SERVICE_NAME:-codemender-mcp-server}"
 BQ_DATASET="${BQ_DATASET:-codemender}"
@@ -25,6 +35,15 @@ BQ_TABLE="${BQ_TABLE:-findings}"
 SA_NAME="${SA_NAME:-codemender-mcp-sa}"
 ALLOW_UNAUTHENTICATED="${ALLOW_UNAUTHENTICATED:-false}"
 BUILD_SERVICE_ACCOUNT="${BUILD_SERVICE_ACCOUNT:-}"
+LOG_NAME_FILTER="${LOG_NAME_FILTER:-codemender}"
+
+# Wiz (optional). WIZ_CLIENT_SECRET is stored in Secret Manager, never as a plain env var.
+WIZ_CLIENT_ID="${WIZ_CLIENT_ID:-}"
+WIZ_CLIENT_SECRET="${WIZ_CLIENT_SECRET:-}"
+WIZ_API_ENDPOINT="${WIZ_API_ENDPOINT:-}"
+WIZ_AUTH_URL="${WIZ_AUTH_URL:-https://auth.app.wiz.io/oauth/token}"
+WIZ_AUDIENCE="${WIZ_AUDIENCE:-wiz-api}"
+WIZ_SECRET_NAME="${WIZ_SECRET_NAME:-wiz-client-secret}"
 
 print_usage() {
   echo "Usage: $0 [OPTIONS]"
@@ -39,7 +58,10 @@ print_usage() {
   echo "  --allow-unauthenticated           Allow unauthenticated invocations (default: require IAM auth)"
   echo "  -h, --help                        Show this help message"
   echo ""
-  echo "Environment variables: PROJECT_ID, REGION, SERVICE_NAME, BQ_DATASET, BQ_TABLE, BUILD_SERVICE_ACCOUNT, ALLOW_UNAUTHENTICATED"
+  echo "Settings are read from .env (see .env.example); override the path with ENV_FILE."
+  echo "Environment variables: PROJECT_ID/GCP_PROJECT_ID, REGION, SERVICE_NAME, BQ_DATASET, BQ_TABLE, LOG_NAME_FILTER,"
+  echo "  BUILD_SERVICE_ACCOUNT, ALLOW_UNAUTHENTICATED, WIZ_CLIENT_ID, WIZ_CLIENT_SECRET, WIZ_API_ENDPOINT,"
+  echo "  WIZ_AUTH_URL, WIZ_AUDIENCE, WIZ_SECRET_NAME"
 }
 
 # Parse command line arguments
@@ -100,6 +122,11 @@ echo -e "  Region:               ${BOLD}${REGION}${RESET}"
 echo -e "  Cloud Run Service:    ${BOLD}${SERVICE_NAME}${RESET}"
 echo -e "  BigQuery Dataset:     ${BOLD}${BQ_DATASET}${RESET}"
 echo -e "  BigQuery Table:       ${BOLD}${BQ_TABLE}${RESET}"
+if [[ -n "${WIZ_CLIENT_ID}" && -n "${WIZ_CLIENT_SECRET}" && -n "${WIZ_API_ENDPOINT}" ]]; then
+  echo -e "  Wiz Integration:      ${BOLD}enabled (${WIZ_API_ENDPOINT})${RESET}"
+else
+  echo -e "  Wiz Integration:      ${BOLD}disabled (set WIZ_* values in .env to enable)${RESET}"
+fi
 echo -e "  Allow Public Access:  ${BOLD}${ALLOW_UNAUTHENTICATED}${RESET}"
 echo -e "${BLUE}${BOLD}============================================================${RESET}"
 echo ""
@@ -162,6 +189,46 @@ if [[ -n "${BUILD_SERVICE_ACCOUNT}" ]]; then
   BUILD_SA_FLAG="--build-service-account=${BUILD_SERVICE_ACCOUNT}"
 fi
 
+# Runtime environment variables
+ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID},BQ_DATASET=${BQ_DATASET},BQ_TABLE=${BQ_TABLE},LOG_NAME_FILTER=${LOG_NAME_FILTER}"
+SECRETS_FLAG=""
+
+# Wiz: store the client secret in Secret Manager and mount it as WIZ_CLIENT_SECRET
+if [[ -n "${WIZ_CLIENT_ID}" && -n "${WIZ_CLIENT_SECRET}" && -n "${WIZ_API_ENDPOINT}" ]]; then
+  echo -e "${YELLOW}==> Configuring Wiz integration (Secret Manager: ${WIZ_SECRET_NAME})...${RESET}"
+  gcloud services enable secretmanager.googleapis.com --project="${PROJECT_ID}"
+
+  if ! gcloud secrets describe "${WIZ_SECRET_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+    printf '%s' "${WIZ_CLIENT_SECRET}" | gcloud secrets create "${WIZ_SECRET_NAME}" \
+      --data-file=- \
+      --replication-policy=automatic \
+      --project="${PROJECT_ID}" >/dev/null
+    echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME}.${RESET}"
+  else
+    CURRENT_SECRET=$(gcloud secrets versions access latest --secret="${WIZ_SECRET_NAME}" --project="${PROJECT_ID}" 2>/dev/null || echo "")
+    if [[ "${CURRENT_SECRET}" != "${WIZ_CLIENT_SECRET}" ]]; then
+      printf '%s' "${WIZ_CLIENT_SECRET}" | gcloud secrets versions add "${WIZ_SECRET_NAME}" \
+        --data-file=- \
+        --project="${PROJECT_ID}" >/dev/null
+      echo -e "${GREEN}    Added new version of secret ${WIZ_SECRET_NAME}.${RESET}"
+    else
+      echo "    Secret ${WIZ_SECRET_NAME} is already up to date."
+    fi
+    unset CURRENT_SECRET
+  fi
+
+  gcloud secrets add-iam-policy-binding "${WIZ_SECRET_NAME}" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/secretmanager.secretAccessor" \
+    --project="${PROJECT_ID}" \
+    --quiet >/dev/null
+
+  ENV_VARS="${ENV_VARS},WIZ_CLIENT_ID=${WIZ_CLIENT_ID},WIZ_API_ENDPOINT=${WIZ_API_ENDPOINT},WIZ_AUTH_URL=${WIZ_AUTH_URL},WIZ_AUDIENCE=${WIZ_AUDIENCE}"
+  SECRETS_FLAG="--set-secrets=WIZ_CLIENT_SECRET=${WIZ_SECRET_NAME}:latest"
+else
+  echo "    Wiz integration not configured; skipping Wiz setup."
+fi
+
 # 6. Build and deploy container to Cloud Run
 echo -e "${YELLOW}==> [5/6] Building container and deploying to Cloud Run...${RESET}"
 if ! gcloud run deploy "${SERVICE_NAME}" \
@@ -170,7 +237,8 @@ if ! gcloud run deploy "${SERVICE_NAME}" \
   --region="${REGION}" \
   --service-account="${SA_EMAIL}" \
   ${BUILD_SA_FLAG} \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},BQ_DATASET=${BQ_DATASET},BQ_TABLE=${BQ_TABLE}" \
+  --set-env-vars="${ENV_VARS}" \
+  ${SECRETS_FLAG} \
   --port=8080 \
   --cpu=1 \
   --memory=1Gi \

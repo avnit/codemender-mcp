@@ -8,6 +8,7 @@ htmlcov/
 .git
 .gitignore
 .env
+.env.*
 .venv
 env/
 venv/
