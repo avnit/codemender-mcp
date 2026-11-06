@@ -1,8 +1,14 @@
 # Module 07: Tools and skills
 
-**Goal:** Finish the custom MCP tools, connect the MCP server to Gemini Enterprise and to the ADK agent, write a skill, wire the agent's toolsets, then deploy the agent to Agent Engine and register it in Gemini Enterprise.
+**Time:** 45 minutes (Part A 18, Part B 10, Part C 17)
 
-**Time:** 60 minutes (Part A 20, Part B 15, Part C 25)
+**Learning objectives**
+
+- Write a parameterized BigQuery tool for the custom MCP server and test it.
+- Write a skill that changes how the agent investigates.
+- Wire the agent's toolsets, check the guardrails, deploy to Agent Engine and register the agent in Gemini Enterprise.
+
+**Goal:** Finish the custom MCP tools, connect the MCP server to Gemini Enterprise and to the ADK agent, write a skill, wire the agent's toolsets, then deploy the agent to Agent Engine and register it in Gemini Enterprise.
 
 **Prerequisites:**
 - Modules 01-06 done. Wiz, Cloud Logging and GitHub remote MCP access tested.
@@ -19,11 +25,11 @@ The exact starter-to-solution file mapping is in `facilitator-guide.md`. In each
 
 ---
 
-## Part A: Custom MCP tools (20 min)
+## Part A: Custom MCP tools (18 min)
 
-### A1. Complete the tool TODOs (10 min)
+### A1. Complete the tool TODOs (8 min)
 
-Complete the TODOs in `starter/mcp-server/services/security_data_service.py`, or copy the solution from `mcp-server/services/security_data_service.py` if you fall behind. Do the same for the tool registration starter in `starter/mcp-server/` (for example `starter/mcp-server/server_new_tools.py`; see `facilitator-guide.md`), whose solution is in `mcp-server/server.py`.
+Complete the TODOs in `starter/mcp-server/services/security_data_service.py`, or copy the solution from `mcp-server/services/security_data_service.py` if you fall behind. In class, write TODO items 1 and 2 below and use the solution `mcp-server/server.py` for the registration (item 3). The registration starter `starter/mcp-server/server_new_tools.py` is in [Optional / take-home](#optional--take-home).
 
 The TODOs:
 
@@ -64,7 +70,7 @@ The TODOs:
 
 3. Register both functions as MCP tools with clear docstrings. The docstring is what the model reads when choosing a tool.
 
-### A2. Run tests (3 min)
+### A2. Run tests (2 min)
 
 ```bash
 cd mcp-server
@@ -85,33 +91,23 @@ print(sorted(t.name for t in tools))"
 
 This assumes the FastMCP instance is called `mcp` in `server.py` (confirm in your environment). Expected list includes the existing tools and the new ones: `wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`, `trace_code_to_cloud`, `query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`, `start_sandbox_validation`, `get_sandbox_result`.
 
-### A3. Redeploy the MCP server (4 min)
+### A3. Redeploy the MCP server (3 min)
 
 ```bash
 cd mcp-server
 ./deploy_cloud_run.sh
 ```
 
-This deploys Cloud Run service `codemender-mcp-server` as `codemender-mcp-sa` with the env vars from `NAMING.md` (`SECURITY_DATASET=security_lab`, `SANDBOX_JOB_NAME=codemender-sandbox`, and the rest). The server uses `stateless_http=True`, which Gemini Enterprise needs.
+This deploys Cloud Run service `codemender-mcp-server` as `codemender-mcp-sa` with the env vars from `NAMING.md` (`SECURITY_DATASET=security_lab`, `SANDBOX_JOB_NAME=codemender-sandbox`, and the rest). The server uses `stateless_http=True`, which Gemini Enterprise needs. The curl smoke test that used to follow this step is in [Optional / take-home](#optional--take-home).
 
 ```bash
-export MCP_URL="$(gcloud run services describe codemender-mcp-server --region="$REGION" --format='value(status.url)')/mcp"
+SERVICE_URL="$(gcloud run services describe codemender-mcp-server \
+  --region="$REGION" --format='value(status.url)')"
+export MCP_URL="${SERVICE_URL}/mcp"
 echo "$MCP_URL"
 ```
 
-Smoke test with your own identity token:
-
-```bash
-curl -s -X POST "$MCP_URL" \
-  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -c 400
-```
-
-Expected: a JSON-RPC result listing tools. A 403 means your user lacks `roles/run.invoker` on the service; that is fine for the connector as long as the service agents below have it.
-
-### A4. Connect to Gemini Enterprise as a custom MCP connector (3 min)
+### A4. Connect to Gemini Enterprise as a custom MCP connector (5 min)
 
 Terraform already granted `roles/run.invoker` on `codemender-mcp-server` to the Discovery Engine service agent `service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com`. Verify:
 
@@ -125,7 +121,8 @@ Expected: `roles/run.invoker` for the Discovery Engine service agent and for the
 The org policy `discoveryengine.managed.disableCustomMcpServerConnector` must allow custom MCP connectors:
 
 ```bash
-gcloud org-policies describe discoveryengine.managed.disableCustomMcpServerConnector --project="$GCP_PROJECT_ID"
+gcloud org-policies describe discoveryengine.managed.disableCustomMcpServerConnector \
+  --project="$GCP_PROJECT_ID"
 ```
 
 Create an OAuth 2.0 client (APIs & Services > Credentials > Create credentials > OAuth client ID > **Web application**) with authorized redirect URI `https://vertexaisearch.cloud.google.com/oauth-redirect`.
@@ -147,9 +144,9 @@ To connect the same server to the ADK agent, set `CODEMENDER_MCP_URL` in `agent/
 
 ---
 
-## Part B: Skills (15 min)
+## Part B: Skills (10 min)
 
-### B1. Anatomy of a SKILL.md (3 min)
+### B1. Anatomy of a SKILL.md (1 min)
 
 Each skill is `agent/skills/<name>/SKILL.md`: YAML front matter, then Markdown instructions.
 
@@ -179,7 +176,7 @@ description: Trace a cloud finding (Wiz issue, image CVE, resource) back to the 
 
 Lab skills: `alert-triage`, `investigation-routing`, `code-to-cloud-attribution`, `root-cause-and-patch`, `sandbox-verification`, `pr-creation`, `bigquery-data-insights`.
 
-### B2. Complete the code-to-cloud-attribution skill (7 min)
+### B2. Complete the code-to-cloud-attribution skill (6 min)
 
 Complete the TODOs in `starter/agent/skills/code-to-cloud-attribution/SKILL.md`, or copy the solution from `agent/skills/code-to-cloud-attribution/SKILL.md` if you fall behind.
 
@@ -190,10 +187,6 @@ The body should tell the agent to:
 3. Confirm in GitHub (GitHub remote MCP: read `Dockerfile` and the Terraform file at the reported commit).
 4. Report: resource -> image (+ digest) -> base image -> repository -> commit -> Dockerfile path -> Terraform path, and which source answered (`wiz` or `bigquery`).
 5. Say "not found" rather than guess when a link is missing.
-
-### B3. How prompts.py loads skills (2 min)
-
-Read `agent/security_agent/prompts.py`. It reads every `agent/skills/*/SKILL.md`, parses the front matter, and adds the skills to the agent instruction. Check whether it inlines full bodies or only names and descriptions with on-demand loading (confirm in your environment by reading the file). Either way, editing a SKILL.md changes behavior after you restart the agent. No code change needed.
 
 ### B4. Test the behavior change (3 min)
 
@@ -207,9 +200,9 @@ Expected with the completed skill: the agent calls `trace_code_to_cloud`, then r
 
 ---
 
-## Part C: Agent wiring, deploy and registration (25 min)
+## Part C: Agent wiring, deploy and registration (17 min)
 
-### C1. Wire the toolsets (8 min)
+### C1. Wire the toolsets (7 min)
 
 Complete the TODOs in `starter/agent/security_agent/toolsets.py`, or copy the solution from `agent/security_agent/toolsets.py` if you fall behind.
 
@@ -236,7 +229,7 @@ cp .env.example .env
 
 Fill in placeholders: `GOOGLE_CLOUD_PROJECT=your-gcp-project-id`, `GOOGLE_CLOUD_LOCATION=us-central1`, `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, `AGENT_MODEL=gemini-2.5-flash`, `GITHUB_ORG=your-github-org`, `GITHUB_PAT=ghp_REPLACE_ME`, `CODEMENDER_MCP_URL=$MCP_URL`, `STAGING_BUCKET=gs://your-gcp-project-id-agent-staging`. Keep `.env` out of git.
 
-### C2. Run `adk web` locally (5 min)
+### C2. Run `adk web` locally (3 min)
 
 ```bash
 cd agent
@@ -249,7 +242,7 @@ Ask: `What tools do you have? Group them by source.`
 
 Expected: four groups (Wiz, Cloud Logging, GitHub, CodeMender). No `merge_pull_request`. If a group is missing, check the terminal for a "toolset skipped" warning.
 
-### C3. Guardrails walkthrough (4 min)
+### C3. Guardrails walkthrough (3 min)
 
 Open `agent/security_agent/guardrails.py`.
 
@@ -273,7 +266,9 @@ Expected: the agent describes the PR and asks for confirmation. Reply `no`. It d
 
 These are defense in depth. Branch protection with CODEOWNERS (1 human approval) is the control that actually stops a merge.
 
-### C4. Deploy to Agent Engine (5 min)
+### C4. Deploy to Agent Engine (2 min)
+
+Start the deploy and read C5 while it runs; packaging and creation take several minutes. If the deploy is still running when Module 08 starts, run Module 08 against `adk web` and register the agent later.
 
 ```bash
 gcloud storage buckets describe gs://your-gcp-project-id-agent-staging >/dev/null \
@@ -290,22 +285,18 @@ export AGENT_ENGINE_ID=projects/<PROJECT_NUMBER>/locations/us-central1/reasoning
 
 Secrets: the deployed agent must not get `GITHUB_PAT` or Wiz secrets in plain env vars. Check `deploy.py` for how it reads them from Secret Manager (`github-mcp-pat`, `wiz-client-secret`) (confirm in your environment).
 
-### C5. Register in Gemini Enterprise (3 min)
+### C5. Register in Gemini Enterprise (2 min)
 
 Follow `agent/register_gemini_enterprise.md`. In short: in the Gemini Enterprise app, add a custom agent backed by the Agent Engine resource `$AGENT_ENGINE_ID`, with a display name and description (confirm UI in your environment). Share it with the lab participants.
 
 Test from Gemini Enterprise: `List the top 5 critical internet-facing vulnerabilities in production.` Expected: a call to `wiz_top_internet_facing_vulnerabilities` and a ranked list.
-
-### Agent Designer (no-code alternative)
-
-Gemini Enterprise also has Agent Designer, a no-code builder where you describe an agent, attach connectors and tools, and publish it without writing ADK code. It is quicker for simple agents. This lab uses ADK because it needs code-level guardrails (tool blocklists, confirmation enforcement), skill loading from files, and tests. Feature coverage of Agent Designer changes frequently; confirm in your environment whether it supports custom MCP connectors and tool filtering before choosing it.
 
 ---
 
 ## Check your work
 
 - [ ] `mcp-server` tests pass; `query_security_events` and the `trace_code_to_cloud` fallback work.
-- [ ] `codemender-mcp-server` redeployed; `tools/list` returns the new tools.
+- [ ] `codemender-mcp-server` redeployed; the A2 tool list includes the new tools.
 - [ ] Gemini Enterprise custom MCP connector authorized and answered a question.
 - [ ] `code-to-cloud-attribution` skill completed; the agent's answer changed.
 - [ ] `adk web` shows four toolsets and no merge tools.
@@ -322,3 +313,33 @@ See [troubleshooting.md](troubleshooting.md): [GE custom MCP connector](troubles
 - A custom MCP connector in Gemini Enterprise backed by Cloud Run with OAuth.
 - A file-based skill that changes how the agent investigates.
 - An ADK agent with four toolsets and guardrails, deployed to Agent Engine and registered in Gemini Enterprise.
+
+## Optional / take-home
+
+These steps do not fit the 4-hour schedule. Do them after the lab.
+
+### B3. How prompts.py loads skills (2 min)
+
+Read `agent/security_agent/prompts.py`. It reads every `agent/skills/*/SKILL.md`, parses the front matter, and adds the skills to the agent instruction. Check whether it inlines full bodies or only names and descriptions with on-demand loading (confirm in your environment by reading the file). Either way, editing a SKILL.md changes behavior after you restart the agent. No code change needed.
+
+### Agent Designer (no-code alternative)
+
+Gemini Enterprise also has Agent Designer, a no-code builder where you describe an agent, attach connectors and tools, and publish it without writing ADK code. It is quicker for simple agents. This lab uses ADK because it needs code-level guardrails (tool blocklists, confirmation enforcement), skill loading from files, and tests. Feature coverage of Agent Designer changes frequently; confirm in your environment whether it supports custom MCP connectors and tool filtering before choosing it.
+
+### A3 extra: smoke-test the MCP server with curl
+
+Smoke test with your own identity token:
+
+```bash
+curl -s -X POST "$MCP_URL" \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -c 400
+```
+
+Expected: a JSON-RPC result listing tools. A 403 means your user lacks `roles/run.invoker` on the service; that is fine for the connector as long as the service agents in step A4 have it.
+
+### A1 extra: register the tools yourself (`server_new_tools.py`)
+
+In class you use the solution `mcp-server/server.py`, which already registers `query_security_events` and `trace_code_to_cloud`. To practice the registration step (TODO item 3 in A1), fill in the two `@mcp.tool()` bodies in `starter/mcp-server/server_new_tools.py`, replace the matching functions in `mcp-server/server.py` with yours, and run `TestServerTools` from `mcp-server/`. `git checkout mcp-server/server.py` restores the solution. Budget about 10 minutes.

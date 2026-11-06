@@ -1,8 +1,14 @@
 # 00 - Overview
 
-**Goal:** Understand what you will build today and set up the environment variables every later module uses.
+**Time:** 10 minutes, after a 10-minute setup check (see [Setup check](#setup-check-10-minutes))
 
-**Time:** 15 minutes
+**Learning objectives**
+
+- Describe the two core capabilities: conversational investigation, and remediation with a human in the loop.
+- Name the components in the architecture and the module that covers each one.
+- Create and source `lab.env` with the variables every later module uses.
+
+**Goal:** Understand what you will build today and set up the environment variables every later module uses.
 
 **Prerequisites:** The Day 1-3 environment (below). `gcloud`, `terraform`, `git`, `gh`, and Python 3.11 or later installed locally.
 
@@ -55,6 +61,8 @@ By the end of the day you will have:
 Everything else is created today, by Terraform in `infra/terraform/` and by the deploy scripts.
 
 ## Architecture
+
+![Architecture](images/architecture.svg)
 
 ```mermaid
 flowchart TB
@@ -177,25 +185,49 @@ sequenceDiagram
     R->>G: Review, approve, merge
 ```
 
-## Module timing and suggested schedule
+## Module timing and schedule
 
-| Time | Module | Duration |
-|---|---|---|
-| 09:00-09:15 | 00 Overview | 15m |
-| 09:15-09:50 | [01 Wiz remote MCP](01-wiz-remote-mcp.md) | 35m |
-| 09:50-10:20 | [02 Cloud Logging remote MCP](02-cloud-logging-remote-mcp.md) | 30m |
-| 10:20-10:35 | Break | 15m |
-| 10:35-11:10 | [03 GitHub remote MCP](03-github-remote-mcp.md) | 35m |
-| 11:10-11:55 | [04 Validation sandbox](04-validation-sandbox.md) | 45m |
-| 11:55-12:40 | [05 Log ingestion](05-log-ingestion.md) | 45m |
-| 12:40-13:40 | Lunch | 60m |
-| 13:40-14:15 | [06 Data Insights on BigQuery](06-data-insights-bigquery.md) | 35m |
-| 14:15-15:15 | [07 Tools and skills](07-tools-and-skills.md) | 60m |
-| 15:15-15:30 | Break | 15m |
-| 15:30-16:30 | [08 Capability exercises](08-capability-exercises.md) | 60m |
-| 16:30-17:00 | Wrap-up and buffer | 30m |
+The lab takes 4 hours (240 minutes), including a setup check, two breaks and a buffer. Times are relative to the start.
 
-Hands-on total: 360 minutes (6 hours). With breaks, lunch, and buffer: 09:00-17:00.
+| Time | Module | Duration | Mode |
+|---|---|---|---|
+| 0:00-0:10 | [Setup check](#setup-check-10-minutes) | 10m | Hands-on |
+| 0:10-0:20 | 00 Overview | 10m | Walkthrough |
+| 0:20-0:40 | [01 Wiz remote MCP](01-wiz-remote-mcp.md) | 20m | Hands-on |
+| 0:40-1:00 | [02 Cloud Logging remote MCP](02-cloud-logging-remote-mcp.md) | 20m | Hands-on |
+| 1:00-1:20 | [03 GitHub remote MCP](03-github-remote-mcp.md) | 20m | Hands-on |
+| 1:20-1:30 | Break | 10m | |
+| 1:30-1:45 | [04 Validation sandbox](04-validation-sandbox.md) | 15m | Deploy and verify |
+| 1:45-1:55 | [05 Log ingestion](05-log-ingestion.md) | 10m | Deploy and verify |
+| 1:55-2:05 | [06 Data Insights on BigQuery](06-data-insights-bigquery.md) | 10m | Guided |
+| 2:05-2:50 | [07 Tools and skills](07-tools-and-skills.md) | 45m | Hands-on |
+| 2:50-3:00 | Break | 10m | |
+| 3:00-3:40 | [08 Capability exercises](08-capability-exercises.md) | 40m | Hands-on |
+| 3:40-3:50 | Buffer | 10m | |
+| 3:50-4:00 | Wrap-up and rubric scores | 10m | |
+
+Module time: 190 minutes. Setup check 10, breaks 20, buffer 10, wrap-up 10. Total: 240 minutes.
+
+For Modules 04 and 05, and for the Terraform and infrastructure steps in other modules, the facilitator deploys before the lab. You run the provided scripts or verify with one or two commands. Each module ends with an **Optional / take-home** section for the steps that do not fit the 4 hours.
+
+## Setup check (10 minutes)
+
+Do this at the start, before the overview.
+
+1. Sign in to the GCP console, the Gemini Enterprise app, the Wiz portal and the GitHub org.
+2. Check the local tools:
+
+   ```bash
+   gcloud --version
+   terraform -version
+   gh auth status
+   python3 --version
+   adk --version
+   ```
+
+3. Create `lab.env` from the [cheat sheet](#environment-variables-cheat-sheet) below, source it, and run the checks in [Check your work](#check-your-work).
+
+If any sign-in or tool fails, tell the facilitator now.
 
 ## Starter vs solution
 
@@ -203,6 +235,7 @@ Hands-on total: 360 minutes (6 hours). With breaks, lunch, and buffer: 09:00-17:
 - `starter/` has copies of selected files with `TODO` markers where you write the code yourself.
 - To work from the starter, copy the starter file over the solution file it maps to, then fill in the TODOs. The mapping table is in [facilitator-guide.md](facilitator-guide.md).
 - If you fall behind, restore the solution file with `git checkout -- <path>` and continue.
+- Which starter files are done in class and which are take-home is listed in [starter/README.md](../starter/README.md).
 
 ## Environment variables cheat sheet
 
@@ -212,7 +245,8 @@ Create `lab.env` in the repo root. Do not commit it. Put no secrets in it: secre
 # lab.env - source this in every new shell: source lab.env
 export GCP_PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
-export PROJECT_NUMBER="$(gcloud projects describe "$GCP_PROJECT_ID" --format='value(projectNumber)')"
+export PROJECT_NUMBER="$(gcloud projects describe "$GCP_PROJECT_ID" \
+  --format='value(projectNumber)')"
 export GITHUB_ORG="your-github-org"
 export GITHUB_REPO="payment-service"
 
@@ -232,7 +266,9 @@ export WIZ_MCP_URL="https://mcp.app.wiz.io"
 export CLOUD_LOGGING_MCP_URL="https://logging.googleapis.com/mcp"
 export GITHUB_MCP_URL="https://api.githubcopilot.com/mcp/"
 # Resolves after mcp-server/deploy_cloud_run.sh has run (README quick start, step 4):
-export CODEMENDER_MCP_URL="$(gcloud run services describe codemender-mcp-server --region "$REGION" --format='value(status.url)' 2>/dev/null)/mcp"
+CODEMENDER_SERVICE_URL="$(gcloud run services describe codemender-mcp-server \
+  --region "$REGION" --format='value(status.url)' 2>/dev/null)"
+export CODEMENDER_MCP_URL="${CODEMENDER_SERVICE_URL}/mcp"
 ```
 
 Then:
@@ -261,4 +297,3 @@ See [troubleshooting.md](troubleshooting.md).
 ## What you built
 
 A `lab.env` file with the shared variables, and an understanding of the architecture and the remediation flow.
-he remediation flow.

@@ -21,7 +21,7 @@
     "cwe_id": "CWE-89",
     "vulnerability_type": "SQL_INJECTION",
     "file_path": "app/db.py",
-    "line_number": 42,
+    "line_number": 73,
     "title": "SQL injection in transaction lookup",
     "description": "get_transactions() builds a SQL statement with an f-string from the 'account' query parameter of /api/transactions. An attacker can read every account's transactions with account=' OR '1'='1.",
     "status": "DETECTED",

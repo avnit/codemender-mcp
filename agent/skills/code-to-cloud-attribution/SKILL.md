@@ -32,7 +32,7 @@ Resource: <resource_id>
 Built from: <repository>@<commit_sha>   image <image>@<digest>, base <base_image>
 Fix location: <path> (<reason>)
 Owner: <CODEOWNERS entry>
-Evidence: <tool + IDs>; mapping source: Wiz | code_to_cloud_map
+Evidence: <tool + IDs>; mapping source: wiz | bigquery (the `source` field returned by trace_code_to_cloud)
 ```
 
 ## Do not

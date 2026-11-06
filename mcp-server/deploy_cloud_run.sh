@@ -44,6 +44,13 @@ WIZ_API_ENDPOINT="${WIZ_API_ENDPOINT:-}"
 WIZ_AUTH_URL="${WIZ_AUTH_URL:-https://auth.app.wiz.io/oauth/token}"
 WIZ_AUDIENCE="${WIZ_AUDIENCE:-wiz-api}"
 WIZ_SECRET_NAME="${WIZ_SECRET_NAME:-wiz-client-secret}"
+# Optional: comma-separated regions for user-managed secret replication (e.g. us-central1).
+WIZ_SECRET_LOCATIONS="${WIZ_SECRET_LOCATIONS:-}"
+
+# Org policy: open constraints/gcp.resourceLocations for this project before creating
+# resources. ORG_POLICY_ALLOWED_LOCATIONS defaults to "global in:<REGION>-locations".
+OPEN_ORG_POLICY="${OPEN_ORG_POLICY:-true}"
+ORG_POLICY_ALLOWED_LOCATIONS="${ORG_POLICY_ALLOWED_LOCATIONS:-}"
 
 # Security data (BigQuery) and sandbox job settings
 SECURITY_DATASET="${SECURITY_DATASET:-security_lab}"
@@ -78,6 +85,8 @@ print_usage() {
   echo "  WIZ_AUTH_URL, WIZ_AUDIENCE, WIZ_SECRET_NAME, SECURITY_DATASET, SECURITY_EVENTS_TABLE,"
   echo "  SANDBOX_RUNS_TABLE, CODE_TO_CLOUD_TABLE, SCC_DATASET, SCC_TABLE, SECURITY_LOGS_DATASET,"
   echo "  MODEL_ARMOR_TABLE, VPCSC_TABLE, SANDBOX_JOB_NAME, SANDBOX_REGION, SANDBOX_BUCKET"
+  echo "Org policy: OPEN_ORG_POLICY (default true), ORG_POLICY_ALLOWED_LOCATIONS"
+  echo "  (default \"global in:<REGION>-locations\"), WIZ_SECRET_LOCATIONS (user-managed replication)"
 }
 
 # Parse command line arguments
@@ -156,6 +165,47 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
   --project="${PROJECT_ID}"
+
+# 1b. Organization policy: allow the locations this deploy creates resources in.
+# Secret Manager automatic replication creates the secret in "global", which
+# constraints/gcp.resourceLocations blocks unless "global" is allowed. This sets a
+# project-level policy that keeps inheriting the parent's allowed locations and
+# adds ORG_POLICY_ALLOWED_LOCATIONS. Requires roles/orgpolicy.policyAdmin
+# (granted at the organization or folder). Set OPEN_ORG_POLICY=false to skip.
+ORG_POLICY_OPENED="false"
+ORG_POLICY_ALLOWED_LOCATIONS="${ORG_POLICY_ALLOWED_LOCATIONS:-global in:${REGION}-locations}"
+if [[ "${OPEN_ORG_POLICY}" == "true" ]]; then
+  echo -e "${YELLOW}==> Opening constraints/gcp.resourceLocations for ${PROJECT_ID} (${ORG_POLICY_ALLOWED_LOCATIONS})...${RESET}"
+  gcloud services enable orgpolicy.googleapis.com --project="${PROJECT_ID}"
+
+  # Keep any values already set in an existing project-level policy.
+  EXISTING_VALUES=$(gcloud org-policies describe gcp.resourceLocations \
+    --project="${PROJECT_ID}" \
+    --format='value(spec.rules[].values.allowedValues)' 2>/dev/null | tr ';,' '  ' || true)
+
+  POLICY_FILE=$(mktemp "${TMPDIR:-/tmp}/resource-locations-XXXXXX")
+  {
+    echo "name: projects/${PROJECT_ID}/policies/gcp.resourceLocations"
+    echo "spec:"
+    echo "  inheritFromParent: true"
+    echo "  rules:"
+    echo "  - values:"
+    echo "      allowedValues:"
+    for VALUE in $(echo ${EXISTING_VALUES} ${ORG_POLICY_ALLOWED_LOCATIONS} | tr ' ' '\n' | awk 'NF && !seen[$0]++'); do
+      echo "      - ${VALUE}"
+    done
+  } > "${POLICY_FILE}"
+
+  if gcloud org-policies set-policy "${POLICY_FILE}" >/dev/null; then
+    ORG_POLICY_OPENED="true"
+    echo -e "${GREEN}    Project policy updated. Changes can take a few minutes to take effect.${RESET}"
+  else
+    echo -e "${YELLOW}    Could not update the org policy (needs roles/orgpolicy.policyAdmin on the org or folder).${RESET}"
+    echo -e "${YELLOW}    Continuing: the Wiz secret will be stored in ${REGION} instead of global.${RESET}"
+  fi
+  rm -f "${POLICY_FILE}"
+  unset EXISTING_VALUES POLICY_FILE
+fi
 
 # 2. Create runtime Service Account
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -236,11 +286,48 @@ if [[ -n "${WIZ_CLIENT_ID}" && -n "${WIZ_CLIENT_SECRET}" && -n "${WIZ_API_ENDPOI
   gcloud services enable secretmanager.googleapis.com --project="${PROJECT_ID}"
 
   if ! gcloud secrets describe "${WIZ_SECRET_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
-    printf '%s' "${WIZ_CLIENT_SECRET}" | gcloud secrets create "${WIZ_SECRET_NAME}" \
-      --data-file=- \
-      --replication-policy=automatic \
-      --project="${PROJECT_ID}" >/dev/null
-    echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME}.${RESET}"
+    # Replication: WIZ_SECRET_LOCATIONS (comma-separated regions) forces user-managed
+    # replication. Otherwise use automatic (global) and, if the location policy still
+    # blocks global, retry while the policy change propagates, then fall back to REGION.
+    create_secret() {
+      printf '%s' "${WIZ_CLIENT_SECRET}" | gcloud secrets create "${WIZ_SECRET_NAME}" \
+        --data-file=- \
+        "$@" \
+        --project="${PROJECT_ID}" 2>&1 >/dev/null
+    }
+
+    if [[ -n "${WIZ_SECRET_LOCATIONS}" ]]; then
+      CREATE_OUTPUT=$(create_secret --replication-policy=user-managed --locations="${WIZ_SECRET_LOCATIONS}") || {
+        echo "${CREATE_OUTPUT}" >&2; exit 1; }
+      echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME} in ${WIZ_SECRET_LOCATIONS}.${RESET}"
+    else
+      CREATED="false"
+      ATTEMPTS=1
+      if [[ "${ORG_POLICY_OPENED}" == "true" ]]; then ATTEMPTS=6; fi
+      for ((i = 1; i <= ATTEMPTS; i++)); do
+        if CREATE_OUTPUT=$(create_secret --replication-policy=automatic); then
+          CREATED="true"
+          echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME} (automatic replication).${RESET}"
+          break
+        fi
+        if [[ "${CREATE_OUTPUT}" != *"gcp.resourceLocations"* ]]; then
+          echo "${CREATE_OUTPUT}" >&2; exit 1
+        fi
+        if (( i < ATTEMPTS )); then
+          echo "    Location policy still blocks global (attempt ${i}/${ATTEMPTS}); waiting 30s for the policy change..."
+          sleep 30
+        fi
+      done
+
+      if [[ "${CREATED}" != "true" ]]; then
+        echo -e "${YELLOW}    Global location not allowed; creating ${WIZ_SECRET_NAME} with replication in ${REGION}.${RESET}"
+        CREATE_OUTPUT=$(create_secret --replication-policy=user-managed --locations="${REGION}") || {
+          echo "${CREATE_OUTPUT}" >&2; exit 1; }
+        echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME} in ${REGION}.${RESET}"
+      fi
+      unset CREATED ATTEMPTS
+    fi
+    unset CREATE_OUTPUT
   else
     CURRENT_SECRET=$(gcloud secrets versions access latest --secret="${WIZ_SECRET_NAME}" --project="${PROJECT_ID}" 2>/dev/null || echo "")
     if [[ "${CURRENT_SECRET}" != "${WIZ_CLIENT_SECRET}" ]]; then
@@ -293,6 +380,32 @@ if ! gcloud run deploy "${SERVICE_NAME}" \
   echo -e "  2. Or specify an active service account for the build:"
   echo -e "     ${BOLD}./deploy_cloud_run.sh -b \"projects/${PROJECT_ID}/serviceAccounts/${SA_EMAIL}\"${RESET}"
   exit 1
+fi
+
+# 6b. Let Gemini Enterprise call the service.
+# Gemini Enterprise calls Cloud Run MCP servers as the Discovery Engine service agent
+# (service-<PROJECT_NUMBER>@gcp-sa-discoveryengine.iam.gserviceaccount.com), sending an
+# ID token in X-Serverless-Authorization. Without roles/run.invoker the call fails with
+# HTTP 403 "insufficient_scope". Set GRANT_GEMINI_ENTERPRISE_INVOKER=false to skip.
+if [[ "${GRANT_GEMINI_ENTERPRISE_INVOKER:-true}" == "true" && -n "${PROJECT_NUMBER}" ]]; then
+  DE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com"
+  echo -e "${YELLOW}==> Granting roles/run.invoker to Gemini Enterprise (${DE_AGENT})...${RESET}"
+  # Make sure the service agent exists (it is created on first use of the API).
+  gcloud beta services identity create --service=discoveryengine.googleapis.com \
+    --project="${PROJECT_ID}" >/dev/null 2>&1 || true
+  if gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
+      --region="${REGION}" \
+      --project="${PROJECT_ID}" \
+      --member="serviceAccount:${DE_AGENT}" \
+      --role="roles/run.invoker" \
+      --quiet >/dev/null; then
+    echo -e "${GREEN}    Gemini Enterprise can now invoke ${SERVICE_NAME}.${RESET}"
+  else
+    echo -e "${YELLOW}    Could not grant roles/run.invoker to ${DE_AGENT}. Grant it manually:${RESET}"
+    echo "    gcloud run services add-iam-policy-binding ${SERVICE_NAME} --region=${REGION} \\"
+    echo "      --member=serviceAccount:${DE_AGENT} --role=roles/run.invoker"
+  fi
+  unset DE_AGENT
 fi
 
 # 7. Retrieve Service URL and verify

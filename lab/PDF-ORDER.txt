@@ -1,0 +1,15 @@
+# Participant guide -> pdf/AI-Security-Agent-Lab-Participant-Guide.pdf
+README.md
+lab/00-overview.md
+lab/01-wiz-remote-mcp.md
+lab/02-cloud-logging-remote-mcp.md
+lab/03-github-remote-mcp.md
+lab/04-validation-sandbox.md
+lab/05-log-ingestion.md
+lab/06-data-insights-bigquery.md
+lab/07-tools-and-skills.md
+lab/08-capability-exercises.md
+lab/troubleshooting.md
+lab/cleanup.md
+# Facilitator guide -> pdf/AI-Security-Agent-Lab-Facilitator-Guide.pdf
+lab/facilitator-guide.md

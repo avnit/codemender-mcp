@@ -21,7 +21,7 @@
     "cwe_id": "CWE-22",
     "vulnerability_type": "PATH_TRAVERSAL",
     "file_path": "app/receipts.py",
-    "line_number": 27,
+    "line_number": 23,
     "title": "Path traversal in receipt download",
     "description": "/api/receipts joins the 'file' query parameter to the receipts directory without normalising it. file=../not_a_secret.txt reads sample-app/data/not_a_secret.txt outside the receipts directory.",
     "status": "DETECTED",

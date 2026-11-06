@@ -1,14 +1,22 @@
 # 01 - Wiz remote MCP
 
-**Goal:** Enable the Wiz remote MCP server, authenticate to it, and query it from the ADK agent. Then compare its answers with the custom MCP tool `wiz_top_internet_facing_vulnerabilities`.
+**Time:** 20 minutes
 
-**Time:** 35 minutes
+**Learning objectives**
+
+- Store a read-only Wiz service account secret in Secret Manager.
+- Connect the ADK agent to the Wiz remote MCP server and query it.
+- Explain when to use a Gemini Enterprise custom MCP connector and when to go through the agent.
+
+**Goal:** Enable the Wiz remote MCP server, authenticate to it, and query it from the ADK agent. Then compare its answers with the custom MCP tool `wiz_top_internet_facing_vulnerabilities`.
 
 **Prerequisites:**
 - [00 Overview](00-overview.md) done, and `source lab.env` works.
 - Terraform applied and `codemender-mcp-server` deployed (README quick start, steps 2-4).
 - A Wiz admin is available for step 1.
 - `agent/.env` created from `agent/.env.example`.
+
+In the 4-hour schedule, the Wiz admin does steps 1 and 3 before the lab and hands each participant the client ID and secret. Participants start at step 2 (read only) and do steps 4-6 and 8 hands-on.
 
 ## Steps
 
@@ -69,6 +77,15 @@ Expected: `projects/<PROJECT_NUMBER>/secrets/wiz-client-secret`. If you get `NOT
 ```bash
 gcloud secrets create wiz-client-secret --replication-policy=automatic
 ```
+
+If this fails with `constraints/gcp.resourceLocations violated ... in [global]`, your organization restricts resource locations. Store the secret in your region instead:
+
+```bash
+gcloud secrets create wiz-client-secret \
+  --replication-policy=user-managed --locations="$REGION"
+```
+
+`mcp-server/deploy_cloud_run.sh` handles this for you: it opens the location policy for the project when it can, and falls back to your region when it can't.
 
 Add the secret value. `read -s` keeps it off the screen and out of shell history:
 
@@ -132,39 +149,7 @@ Expected: the script ends by printing the service URL, `https://codemender-mcp-s
 
 5. Stop the server with Ctrl+C. Then run `unset WIZ_CLIENT_SECRET`.
 
-### 7. Test the custom MCP tool `wiz_top_internet_facing_vulnerabilities`
-
-Call the tool directly on Cloud Run. From the repo root:
-
-```bash
-cat > /tmp/call_wiz_tool.py <<'EOF'
-import asyncio, os, subprocess
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-
-URL = os.environ["CODEMENDER_MCP_URL"]
-TOKEN = subprocess.check_output(["gcloud", "auth", "print-identity-token"]).decode().strip()
-
-async def main():
-    async with streamablehttp_client(URL, headers={"Authorization": f"Bearer {TOKEN}"}) as (r, w, _):
-        async with ClientSession(r, w) as s:
-            await s.initialize()
-            res = await s.call_tool(
-                "wiz_top_internet_facing_vulnerabilities",
-                {"environment": "production", "severity": "CRITICAL", "limit": 5},
-            )
-            for c in res.content:
-                print(c.text)
-
-asyncio.run(main())
-EOF
-source lab.env
-python3 /tmp/call_wiz_tool.py
-```
-
-Expected: JSON with up to 5 items. Each item has a finding name or CVE, severity, the resource name and type, the project, and an internet exposure indicator. If Wiz is not configured, you get an error object that says so. That points to step 5.
-
-Then call the same tool through the agent. In `agent/.env`, set `ENABLE_WIZ=false` and `ENABLE_CODEMENDER=true`. Set `CODEMENDER_MCP_URL` to the service URL with `/mcp` appended. Run `adk web` and ask the same question. In the event panel, the agent should call `wiz_top_internet_facing_vulnerabilities`.
+Step 7 (calling the custom tool directly) is in [Optional / take-home](#optional--take-home).
 
 ### 8. Gemini Enterprise: custom MCP connector vs ADK agent
 
@@ -185,7 +170,65 @@ There are two ways to put Wiz in front of Gemini Enterprise users.
 
 Use A for direct, per-user Wiz lookups. Use B for the investigation and remediation workflows in this lab.
 
-## Exercise: remote Wiz MCP vs custom tool
+## Check your work
+
+- `gcloud secrets versions list wiz-client-secret` shows at least one `enabled` version.
+- With only `ENABLE_WIZ=true`, the agent answers the top-5 question using Wiz MCP tools.
+- You can explain when to use a GE custom MCP connector and when to go through the agent.
+
+## Troubleshooting
+
+See [troubleshooting.md](troubleshooting.md). Common issues:
+- `401` or `403` from Wiz MCP: the MCP server is not enabled in the tenant, the service account lacks a scope, or the secret has a trailing newline. `printf '%s'` avoids the newline.
+- The custom tool says Wiz is not configured: `WIZ_CLIENT_ID` was not passed to `deploy_cloud_run.sh`, or `codemender-mcp-sa` cannot read the secret.
+- GraphQL errors such as `Cannot query field ...`: see "Verify against your tenant's schema" in [Optional / take-home](#optional--take-home).
+
+## What you built
+
+A read-only Wiz service account, its secret stored in Secret Manager `wiz-client-secret`, a working Wiz MCP connection from the ADK agent, and a comparison between the remote Wiz MCP server and the custom `wiz_top_internet_facing_vulnerabilities` tool.
+
+## Optional / take-home
+
+These steps do not fit the 4-hour schedule. Do them after the lab, or during the buffer if you finish early. The custom tool `wiz_top_internet_facing_vulnerabilities` is used again in Module 08 Part 1.
+
+### 7. Test the custom MCP tool `wiz_top_internet_facing_vulnerabilities`
+
+Call the tool directly on Cloud Run. From the repo root:
+
+```bash
+cat > /tmp/call_wiz_tool.py <<'EOF'
+import asyncio, os, subprocess
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+URL = os.environ["CODEMENDER_MCP_URL"]
+TOKEN = subprocess.check_output(["gcloud", "auth", "print-identity-token"]).decode().strip()
+
+async def main():
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    async with streamablehttp_client(URL, headers=headers) as (r, w, _):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            res = await s.call_tool(
+                "wiz_top_internet_facing_vulnerabilities",
+                {"environment": "production", "severity": "CRITICAL", "limit": 5},
+            )
+            for c in res.content:
+                print(c.text)
+
+asyncio.run(main())
+EOF
+source lab.env
+python3 /tmp/call_wiz_tool.py
+```
+
+Expected: JSON with up to 5 items. Each item has a finding name or CVE, severity, the resource name and type, the project, and an internet exposure indicator. If Wiz is not configured, you get an error object that says so. That points to step 5.
+
+Then call the same tool through the agent. In `agent/.env`, set `ENABLE_WIZ=false` and `ENABLE_CODEMENDER=true`. Set `CODEMENDER_MCP_URL` to the service URL with `/mcp` appended. Run `adk web` and ask the same question. In the event panel, the agent should call `wiz_top_internet_facing_vulnerabilities`.
+
+If you did step 7, also check: `python3 /tmp/call_wiz_tool.py` returns findings, not an authentication error.
+
+### Exercise: remote Wiz MCP vs custom tool
 
 1. Ask the same question once with only `ENABLE_WIZ=true` and once with only `ENABLE_CODEMENDER=true`:
    > What are our top 5 critical internet-facing vulnerabilities in production right now?
@@ -195,7 +238,7 @@ Use A for direct, per-user Wiz lookups. Use B for the investigation and remediat
    - Which answer cites the resource ID you need for code-to-cloud attribution (module 08)?
    - Which one is easier to keep stable for a scheduled report?
 
-## Verify against your tenant's schema
+### Verify against your tenant's schema
 
 The custom tools in `mcp-server/` use Wiz GraphQL fields that vary by tenant and API version. Before you trust the custom tool output, check these fields with `query_wiz_graphql` or the Wiz GraphQL explorer. Each one: verify against your tenant's schema.
 
@@ -206,21 +249,3 @@ The custom tools in `mcp-server/` use Wiz GraphQL fields that vary by tenant and
 - `issuesV2` vs `issues` for `list_wiz_issues`, and the `entitySnapshot` subfields.
 - Identity and permission fields used by `wiz_excessive_permission_identities` (for example the excessive access or effective permissions finding types).
 - Fields used by `trace_code_to_cloud`, such as container image to repository links. If they are missing, the tool falls back to BigQuery `security_lab.code_to_cloud_map`.
-
-## Check your work
-
-- `gcloud secrets versions list wiz-client-secret` shows at least one `enabled` version.
-- With only `ENABLE_WIZ=true`, the agent answers the top-5 question using Wiz MCP tools.
-- `python3 /tmp/call_wiz_tool.py` returns findings, not an authentication error.
-- You can explain when to use a GE custom MCP connector and when to go through the agent.
-
-## Troubleshooting
-
-See [troubleshooting.md](troubleshooting.md). Common issues:
-- `401` or `403` from Wiz MCP: the MCP server is not enabled in the tenant, the service account lacks a scope, or the secret has a trailing newline. `printf '%s'` avoids the newline.
-- The custom tool says Wiz is not configured: `WIZ_CLIENT_ID` was not passed to `deploy_cloud_run.sh`, or `codemender-mcp-sa` cannot read the secret.
-- GraphQL errors such as `Cannot query field ...`: see the verify list above.
-
-## What you built
-
-A read-only Wiz service account, its secret stored in Secret Manager `wiz-client-secret`, a working Wiz MCP connection from the ADK agent, and a comparison between the remote Wiz MCP server and the custom `wiz_top_internet_facing_vulnerabilities` tool.

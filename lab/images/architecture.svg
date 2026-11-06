@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" width="1200" height="820" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">AI Security Agent Lab architecture</title>
+  <desc id="desc">An analyst uses the Gemini Enterprise app, which hosts the ADK agent ai_security_agent on Agent Engine and the Data Insights agent. The agent calls four MCP servers: Wiz remote MCP, Cloud Logging remote MCP, GitHub remote MCP, and codemender-mcp-server on Cloud Run. The custom server reads BigQuery, queries the Wiz GraphQL API and starts the sandbox Cloud Run Job, which reads its inputs from a GCS bucket and has no egress. GitHub Actions in the payment-service repo run the scan and sandbox validation. Logs flow from Cloud Logging through a sink and Pub/Sub to security-log-ingestion and into BigQuery. SCC export and Model Armor and VPC SC sinks also write to BigQuery.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#37474f"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="820" fill="#ffffff"/>
+
+  <!-- Zones -->
+  <rect x="150" y="20" width="490" height="190" rx="10" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1.5"/>
+  <text x="166" y="42" font-size="14" font-weight="bold" fill="#1a73e8">Gemini Enterprise</text>
+
+  <rect x="670" y="20" width="510" height="190" rx="10" fill="#fdf2e9" stroke="#e8710a" stroke-width="1.5"/>
+  <text x="686" y="42" font-size="14" font-weight="bold" fill="#b45309">Security sources</text>
+
+  <rect x="670" y="240" width="510" height="210" rx="10" fill="#f1f3f4" stroke="#5f6368" stroke-width="1.5"/>
+  <text x="686" y="262" font-size="14" font-weight="bold" fill="#3c4043">GitHub</text>
+
+  <rect x="20" y="240" width="620" height="560" rx="10" fill="#e6f4ea" stroke="#188038" stroke-width="1.5"/>
+  <text x="36" y="262" font-size="14" font-weight="bold" fill="#188038">Google Cloud project (your-gcp-project-id)</text>
+
+  <!-- Analyst -->
+  <rect x="20" y="90" width="110" height="50" rx="25" fill="#ffffff" stroke="#37474f" stroke-width="1.5"/>
+  <text x="75" y="120" font-size="14" text-anchor="middle" fill="#202124">Analyst</text>
+
+  <!-- Gemini Enterprise zone -->
+  <rect x="170" y="90" width="150" height="50" rx="6" fill="#ffffff" stroke="#1a73e8" stroke-width="1.5"/>
+  <text x="245" y="111" font-size="13" text-anchor="middle" fill="#202124">Gemini Enterprise</text>
+  <text x="245" y="128" font-size="13" text-anchor="middle" fill="#202124">app</text>
+
+  <rect x="350" y="56" width="270" height="60" rx="6" fill="#ffffff" stroke="#1a73e8" stroke-width="1.5"/>
+  <text x="485" y="80" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">ADK agent ai_security_agent</text>
+  <text x="485" y="99" font-size="12" text-anchor="middle" fill="#3c4043">on Vertex AI Agent Engine</text>
+
+  <rect x="350" y="140" width="270" height="44" rx="6" fill="#ffffff" stroke="#1a73e8" stroke-width="1.5"/>
+  <text x="485" y="167" font-size="13" text-anchor="middle" fill="#202124">Data Insights agent</text>
+
+  <!-- Security sources zone -->
+  <rect x="690" y="60" width="220" height="50" rx="6" fill="#ffffff" stroke="#e8710a" stroke-width="1.5"/>
+  <text x="800" y="81" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">Wiz remote MCP</text>
+  <text x="800" y="99" font-size="12" text-anchor="middle" fill="#3c4043">mcp.app.wiz.io</text>
+
+  <rect x="940" y="60" width="220" height="50" rx="6" fill="#ffffff" stroke="#e8710a" stroke-width="1.5"/>
+  <text x="1050" y="90" font-size="13" text-anchor="middle" fill="#202124">Wiz GraphQL API</text>
+
+  <rect x="810" y="140" width="250" height="44" rx="6" fill="#ffffff" stroke="#e8710a" stroke-width="1.5"/>
+  <text x="935" y="167" font-size="13" text-anchor="middle" fill="#202124">CodeMender endpoint or mock mode</text>
+
+  <!-- GitHub zone -->
+  <rect x="690" y="280" width="220" height="50" rx="6" fill="#ffffff" stroke="#5f6368" stroke-width="1.5"/>
+  <text x="800" y="301" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">GitHub remote MCP</text>
+  <text x="800" y="319" font-size="12" text-anchor="middle" fill="#3c4043">api.githubcopilot.com/mcp/</text>
+
+  <rect x="940" y="280" width="220" height="50" rx="6" fill="#ffffff" stroke="#5f6368" stroke-width="1.5"/>
+  <text x="1050" y="301" font-size="13" text-anchor="middle" fill="#202124">Repo payment-service</text>
+  <text x="1050" y="319" font-size="12" text-anchor="middle" fill="#3c4043">CODEOWNERS, branch protection</text>
+
+  <rect x="815" y="370" width="300" height="56" rx="6" fill="#ffffff" stroke="#5f6368" stroke-width="1.5"/>
+  <text x="965" y="393" font-size="13" text-anchor="middle" fill="#202124">GitHub Actions workflows</text>
+  <text x="965" y="412" font-size="12" text-anchor="middle" fill="#3c4043">codemender-scan.yml, sandbox-validate.yml</text>
+
+  <!-- Google Cloud zone -->
+  <rect x="40" y="280" width="250" height="50" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="165" y="301" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">Cloud Logging remote MCP</text>
+  <text x="165" y="319" font-size="12" text-anchor="middle" fill="#3c4043">logging.googleapis.com/mcp</text>
+
+  <rect x="330" y="280" width="290" height="50" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="475" y="301" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">codemender-mcp-server</text>
+  <text x="475" y="319" font-size="12" text-anchor="middle" fill="#3c4043">Cloud Run, custom MCP server</text>
+
+  <rect x="40" y="400" width="250" height="56" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="165" y="423" font-size="13" text-anchor="middle" fill="#202124">GCS inputs bucket</text>
+  <text x="165" y="442" font-size="12" text-anchor="middle" fill="#3c4043">your-gcp-project-id-sandbox-inputs</text>
+
+  <rect x="330" y="400" width="290" height="56" rx="6" fill="#ffffff" stroke="#c5221f" stroke-width="2"/>
+  <text x="475" y="423" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">Sandbox: Cloud Run Job</text>
+  <text x="475" y="442" font-size="12" text-anchor="middle" fill="#3c4043">codemender-sandbox (gen2, no egress)</text>
+
+  <rect x="40" y="540" width="250" height="80" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="165" y="564" font-size="14" font-weight="bold" text-anchor="middle" fill="#202124">BigQuery</text>
+  <text x="165" y="584" font-size="12" text-anchor="middle" fill="#3c4043">codemender, security_lab,</text>
+  <text x="165" y="602" font-size="12" text-anchor="middle" fill="#3c4043">scc_export, security_logs</text>
+
+  <rect x="40" y="650" width="110" height="60" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="95" y="676" font-size="12" text-anchor="middle" fill="#202124">SCC continuous</text>
+  <text x="95" y="694" font-size="12" text-anchor="middle" fill="#202124">export</text>
+
+  <rect x="160" y="650" width="130" height="60" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="225" y="676" font-size="12" text-anchor="middle" fill="#202124">Model Armor and</text>
+  <text x="225" y="694" font-size="12" text-anchor="middle" fill="#202124">VPC SC log sinks</text>
+
+  <rect x="330" y="520" width="290" height="44" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="475" y="547" font-size="13" text-anchor="middle" fill="#202124">Cloud Logging</text>
+
+  <rect x="330" y="590" width="290" height="44" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="475" y="617" font-size="13" text-anchor="middle" fill="#202124">Log sink security-logs-to-pubsub</text>
+
+  <rect x="330" y="660" width="290" height="44" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="475" y="680" font-size="13" text-anchor="middle" fill="#202124">Pub/Sub security-logs</text>
+  <text x="475" y="696" font-size="12" text-anchor="middle" fill="#3c4043">dead-letter: security-logs-dlq</text>
+
+  <rect x="330" y="740" width="290" height="44" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="475" y="760" font-size="13" text-anchor="middle" fill="#202124">security-log-ingestion</text>
+  <text x="475" y="776" font-size="12" text-anchor="middle" fill="#3c4043">Cloud Run service</text>
+
+  <!-- Arrows -->
+  <g fill="none" stroke="#37474f" stroke-width="1.5" marker-end="url(#arrow)">
+    <!-- Analyst to app, app to agents -->
+    <line x1="130" y1="115" x2="168" y2="115"/>
+    <line x1="320" y1="105" x2="348" y2="90"/>
+    <line x1="320" y1="125" x2="348" y2="155"/>
+    <!-- Agent to the four MCP servers -->
+    <line x1="620" y1="85" x2="688" y2="85"/>
+    <polyline points="620,108 655,108 655,232 760,232 760,278"/>
+    <line x1="400" y1="116" x2="200" y2="278"/>
+    <polyline points="350,70 338,70 338,278"/>
+    <!-- Data Insights to BigQuery -->
+    <polyline points="370,184 370,226 28,226 28,560 38,560"/>
+    <!-- codemender-mcp-server to BigQuery, Wiz GraphQL, sandbox job -->
+    <line x1="345" y1="330" x2="282" y2="538"/>
+    <polyline points="620,300 648,300 648,224 1172,224 1172,85 1162,85"/>
+    <line x1="475" y1="330" x2="475" y2="398"/>
+    <!-- GitHub: MCP to repo, repo to Actions -->
+    <line x1="910" y1="295" x2="938" y2="295"/>
+    <line x1="1050" y1="330" x2="1010" y2="368"/>
+    <!-- Actions to CodeMender endpoint, sandbox job, GCS, Cloud Logging -->
+    <line x1="925" y1="370" x2="925" y2="186"/>
+    <line x1="815" y1="400" x2="622" y2="425"/>
+    <polyline points="870,426 870,476 165,476 165,458"/>
+    <line x1="840" y1="426" x2="622" y2="535"/>
+    <!-- Sandbox job reads GCS and writes logs -->
+    <line x1="330" y1="428" x2="292" y2="428"/>
+    <line x1="475" y1="456" x2="475" y2="518"/>
+    <!-- Cloud Logging remote MCP reads Cloud Logging -->
+    <polyline points="290,315 310,315 310,542 328,542"/>
+    <!-- Log pipeline -->
+    <line x1="475" y1="564" x2="475" y2="588"/>
+    <line x1="475" y1="634" x2="475" y2="658"/>
+    <line x1="475" y1="704" x2="475" y2="738"/>
+    <polyline points="330,762 305,762 305,600 292,600"/>
+    <!-- Cloud Logging to Model Armor / VPC SC sinks, sinks and SCC to BigQuery -->
+    <polyline points="330,556 318,556 318,680 292,680"/>
+    <line x1="95" y1="650" x2="95" y2="622"/>
+    <line x1="225" y1="650" x2="225" y2="622"/>
+  </g>
+
+  <!-- Arrow labels -->
+  <text x="485" y="725" font-size="12" fill="#3c4043">OIDC push /pubsub/push</text>
+  <text x="702" y="455" font-size="12" fill="#3c4043">execute job</text>
+  <text x="482" y="370" font-size="12" fill="#3c4043">start run (confirmed=True)</text>
+  <text x="482" y="492" font-size="12" fill="#3c4043">SANDBOX_RESULT</text>
+  <text x="670" y="494" font-size="12" fill="#3c4043">stage source</text>
+  <text x="680" y="510" font-size="12" fill="#3c4043">and patch</text>
+
+  <!-- Notes -->
+  <rect x="670" y="560" width="510" height="200" rx="10" fill="#ffffff" stroke="#9aa0a6" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="686" y="584" font-size="14" font-weight="bold" fill="#202124">Notes</text>
+  <text x="686" y="608" font-size="12" fill="#3c4043">Sandbox: Cloud Run Jobs run only on gen2 (microVM), so there is no gVisor.</text>
+  <text x="686" y="628" font-size="12" fill="#3c4043">Egress is denied except the restricted Google APIs VIP (199.36.153.4/30).</text>
+  <text x="686" y="648" font-size="12" fill="#3c4043">sandbox-runner-sa has no project roles; it can only read the inputs bucket.</text>
+  <text x="686" y="672" font-size="12" fill="#3c4043">Code reaches the sandbox through the GCS bucket, not a git clone.</text>
+  <text x="686" y="696" font-size="12" fill="#3c4043">The agent opens PRs and starts runs only after the user confirms.</text>
+  <text x="686" y="716" font-size="12" fill="#3c4043">It has no merge tool. A human reviewer merges (CODEOWNERS).</text>
+  <text x="686" y="740" font-size="12" fill="#3c4043">CodeMender has no public API: configurable endpoint or mock mode.</text>
+</svg>

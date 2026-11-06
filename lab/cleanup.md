@@ -35,7 +35,8 @@ In the Gemini Enterprise app, disable the `ai_security_agent` registration and a
 ### 3. Delete the Agent Engine resource
 
 ```bash
-gcloud ai reasoning-engines list --region="$REGION"   # confirm in your environment; or use the Vertex AI console
+# confirm in your environment; or use the Vertex AI console
+gcloud ai reasoning-engines list --region="$REGION"
 ```
 
 Delete it with the Vertex AI SDK (works without extra CLI components):
@@ -124,7 +125,8 @@ A deleted pool is soft-deleted for 30 days. During that time the name `github-po
 Each command should return nothing (or "Listed 0 items").
 
 ```bash
-gcloud run services list --region="$REGION" --filter="metadata.name:(codemender-mcp-server security-log-ingestion)"
+gcloud run services list --region="$REGION" \
+  --filter="metadata.name:(codemender-mcp-server security-log-ingestion)"
 gcloud run jobs list --region="$REGION" --filter="metadata.name:codemender-sandbox"
 gcloud pubsub topics list --filter="name:security-logs"
 gcloud pubsub subscriptions list --filter="name:security-logs"
@@ -133,8 +135,10 @@ gcloud compute networks list --filter="name=sandbox-vpc"
 gcloud compute firewall-rules list --filter="name~^sandbox-"
 gcloud artifacts repositories list --location="$REGION" --filter="name~security-lab"
 gcloud secrets list --filter="name~(wiz-client-secret|github-mcp-pat|codemender-api-token)"
-gcloud iam service-accounts list --filter="email~(codemender-mcp-sa|log-ingestion-sa|sandbox-runner-sa|pubsub-push-sa|github-actions-sa)"
-gcloud iam workload-identity-pools list --location=global --filter="name~github-pool"   # shows state DELETED for 30 days
+SA_RE="codemender-mcp-sa|log-ingestion-sa|sandbox-runner-sa|pubsub-push-sa|github-actions-sa"
+gcloud iam service-accounts list --filter="email~(${SA_RE})"
+# shows state DELETED for 30 days
+gcloud iam workload-identity-pools list --location=global --filter="name~github-pool"
 gcloud storage ls | grep -E "sandbox-inputs|agent-staging"
 bq ls --project_id="$GCP_PROJECT_ID" | grep -E "security_lab|security_logs|scc_export|codemender"
 ```
@@ -144,7 +148,8 @@ bq ls --project_id="$GCP_PROJECT_ID" | grep -E "security_lab|security_logs|scc_e
 Check IAM for leftover bindings to deleted accounts (they show as `deleted:serviceAccount:...`):
 
 ```bash
-gcloud projects get-iam-policy "$GCP_PROJECT_ID" --format=json | grep -E "deleted:|discoveryengine|aiplatform-re"
+gcloud projects get-iam-policy "$GCP_PROJECT_ID" --format=json \
+  | grep -E "deleted:|discoveryengine|aiplatform-re"
 ```
 
 Remove any lab-only bindings that remain, for example `roles/geminidataanalytics.dataAgentUser` for participants.

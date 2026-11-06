@@ -1,8 +1,14 @@
 # 02 - Cloud Logging remote MCP
 
-**Goal:** Enable the Cloud Logging remote MCP server, use it from the ADK agent, and register it in Gemini Enterprise as a custom MCP connector with OAuth.
+**Time:** 20 minutes
 
-**Time:** 30 minutes
+**Learning objectives**
+
+- Enable the Cloud Logging remote MCP endpoint and grant the IAM it needs.
+- Connect it to the ADK agent and register it in Gemini Enterprise as a custom MCP connector with OAuth.
+- Check the Logging filter the agent sends against an expected filter.
+
+**Goal:** Enable the Cloud Logging remote MCP server, use it from the ADK agent, and register it in Gemini Enterprise as a custom MCP connector with OAuth.
 
 **Prerequisites:**
 - [01 Wiz remote MCP](01-wiz-remote-mcp.md) done. `adk web` runs locally.
@@ -56,18 +62,7 @@ gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
 
 Terraform already grants `roles/logging.viewer` to the Agent Engine service agent `service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com` and to `codemender-mcp-sa`.
 
-### 3. Smoke-test the endpoint with curl
-
-```bash
-TOKEN="$(gcloud auth print-access-token)"
-curl -s -X POST https://logging.googleapis.com/mcp \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```
-
-Expected: a JSON-RPC result that lists `list_log_entries` and `list_log_names`. Some servers require an `initialize` call before `tools/list`. If you get an error that says so, use the agent test in step 4 instead.
+Step 3 (curl smoke test) is in [Optional / take-home](#optional--take-home). The agent test in step 4 covers the same check.
 
 ### 4. Configure the toolset in the ADK agent
 
@@ -184,12 +179,51 @@ Separate lines are joined with AND. A looser filter is fine if it returns the sa
 
 Check: the answer lists only `ERROR` entries or worse, all for `payment-service`, all from the last hour.
 
+Exercise 2 (IAM changes) is in [Optional / take-home](#optional--take-home).
+
+## Check your work
+
+- The MCP endpoint is enabled for `logging.googleapis.com`.
+- The agent with only `ENABLE_LOGGING=true` answers Exercise 1 using `list_log_entries`.
+- The Gemini Enterprise custom MCP connector is authorized and returns log names.
+- You can explain why each call names exactly one project.
+
+## Troubleshooting
+
+See [troubleshooting.md](troubleshooting.md). Common issues:
+- `403 PERMISSION_DENIED`: missing `roles/logging.viewer`, the MCP endpoint is not enabled, or the token lacks a scope.
+- Gemini Enterprise connector: `redirect_uri_mismatch` means the redirect URI on the OAuth client is not exactly `https://vertexaisearch.cloud.google.com/oauth-redirect`.
+- The connector option is missing in Gemini Enterprise: the org policy is enforced.
+- No results: check the time range, and check that `write_sample_logs.sh` wrote to the same project.
+
+## What you built
+
+The Cloud Logging MCP endpoint, enabled and reachable from the ADK agent with a `google.auth` token, and registered in Gemini Enterprise as a per-user OAuth custom MCP connector. Sample `codemender` logs, and two investigation queries checked against expected filters.
+
+## Optional / take-home
+
+These steps do not fit the 4-hour schedule. Do them after the lab. The facilitator may show Exercise 2 as a read-through.
+
+### 3. Smoke-test the endpoint with curl
+
+```bash
+TOKEN="$(gcloud auth print-access-token)"
+curl -s -X POST https://logging.googleapis.com/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Expected: a JSON-RPC result that lists `list_log_entries` and `list_log_names`. Some servers require an `initialize` call before `tools/list`. If you get an error that says so, use the agent test in step 4 instead.
+
 ### Exercise 2: "Who changed IAM on payment-service-sa today?"
 
 First, make a change for the agent to find. If `payment-service-sa` does not exist in your project, create it with no roles:
 
 ```bash
-gcloud iam service-accounts create payment-service-sa --display-name="payment-service (lab)" 2>/dev/null || true
+gcloud iam service-accounts create payment-service-sa \
+  --display-name="payment-service (lab)" 2>/dev/null || true
 SA="payment-service-sa@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
 ME="$(gcloud config get-value account)"
 gcloud iam service-accounts add-iam-policy-binding "$SA" \
@@ -224,22 +258,3 @@ timestamp>="2026-10-20T07:00:00Z"
 "Today" means since local midnight. The timestamp above is midnight Pacific in UTC. Exact `methodName` strings: confirm in your environment, by reading one entry with `gcloud logging read`.
 
 Check: the answer names your account as `protoPayload.authenticationInfo.principalEmail`, shows the add and the remove with times, and names the role.
-
-## Check your work
-
-- The MCP endpoint is enabled for `logging.googleapis.com`.
-- The agent with only `ENABLE_LOGGING=true` answers both exercises using `list_log_entries`.
-- The Gemini Enterprise custom MCP connector is authorized and returns log names.
-- You can explain why each call names exactly one project.
-
-## Troubleshooting
-
-See [troubleshooting.md](troubleshooting.md). Common issues:
-- `403 PERMISSION_DENIED`: missing `roles/logging.viewer`, the MCP endpoint is not enabled, or the token lacks a scope.
-- Gemini Enterprise connector: `redirect_uri_mismatch` means the redirect URI on the OAuth client is not exactly `https://vertexaisearch.cloud.google.com/oauth-redirect`.
-- The connector option is missing in Gemini Enterprise: the org policy is enforced.
-- No results: check the time range, and check that `write_sample_logs.sh` wrote to the same project.
-
-## What you built
-
-The Cloud Logging MCP endpoint, enabled and reachable from the ADK agent with a `google.auth` token, and registered in Gemini Enterprise as a per-user OAuth custom MCP connector. Sample `codemender` logs, and two investigation queries checked against expected filters.

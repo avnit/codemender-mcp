@@ -1,30 +1,41 @@
+<!--
+AI-generated pull requests must be reviewed and merged by a human.
+The security agent may open this PR; it must not approve or merge it.
+-->
+
 ## Summary
 
-<!-- What does this change fix and how? One or two sentences. -->
+<!-- One or two sentences: what changes and why. -->
 
-## CodeMender issue
+## Linked finding
 
-- Issue ID: <!-- e.g. CM-0001 -->
+- CodeMender ID: <!-- e.g. CM-0001 -->
+- Wiz issue: <!-- e.g. wiz-issue-0001 -->
+- Fix branch: <!-- e.g. security/CM-0001-parameterize-sql -->
+
+## Security justification
+
+- Vulnerability: <!-- e.g. SQL injection in get_transactions -->
 - CWE: <!-- e.g. CWE-89 -->
-- Wiz issue ID (if any): <!-- e.g. wiz-issue-0001 -->
-- Opened by: <!-- human / AI agent (name the agent) -->
+- Root cause: <!-- what in the code allowed it -->
+- Fix: <!-- what the patch changes -->
+- Why it is safe: <!-- why the fix closes the issue and keeps behavior -->
+- Residual risk: <!-- what is not covered; follow-ups -->
 
-## Sandbox validation
+## Sandbox verification
 
-- `sandbox-validate` run: <!-- link to the workflow run -->
-- run_id: <!-- from the job summary -->
+- run_id: <!-- from sandbox-validate -->
 - Verdict: <!-- PATCH_VERIFIED | PATCH_FAILED | POC_NOT_REPRODUCED | ERROR -->
-- PoC before / after: <!-- EXPLOITABLE / NOT_EXPLOITABLE -->
-- Unit tests: <!-- passed / failed (tests_total, tests_failed) -->
+- PoC before: <!-- EXPLOITABLE -->
+- PoC after: <!-- NOT_EXPLOITABLE -->
+- Unit tests: <!-- passed / total -->
 
-## Reviewer checklist
+## Human review checklist
 
-- [ ] The change fixes the root cause, not only the PoC input.
-- [ ] `sandbox-validate` verdict is `PATCH_VERIFIED` for this branch.
-- [ ] Unit tests in `tests/unit/` pass.
-- [ ] No secrets, credentials, or real customer data in the diff.
-- [ ] If an AI agent opened this PR, a human has read the full diff.
-
-AI agents may open pull requests but must never merge them. Merging requires
-one approving review from a code owner (see `.github/CODEOWNERS` and
-`docs/branch-protection.md`).
+- [ ] The linked finding and Wiz issue match this change.
+- [ ] I read the full diff; it changes only what the fix needs.
+- [ ] The sandbox verdict is PATCH_VERIFIED for the commit this PR is based on.
+- [ ] Unit tests pass in CI.
+- [ ] No secrets, credentials, or new external network calls were added.
+- [ ] No new dependencies, or each new dependency is justified.
+- [ ] A human (not the agent) will approve and merge this PR.

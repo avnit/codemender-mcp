@@ -1,8 +1,14 @@
 # Module 05: Log ingestion pipeline
 
-**Goal:** Route CodeMender, sandbox, and IAM audit log entries from Cloud Logging into BigQuery through Pub/Sub and a Cloud Run service. You will finish the parser, deploy it, send test events, and test the error paths.
+**Time:** 10 minutes (deploy and verify)
 
-**Time:** 45 minutes
+**Learning objectives**
+
+- Trace a log entry from Cloud Logging through the sink, Pub/Sub and `security-log-ingestion` to BigQuery.
+- Verify the pre-deployed sink, push subscription and dead-letter topic.
+- Confirm that new rows reach `security_events` and `sandbox_runs`.
+
+**Goal:** Route CodeMender, sandbox, and IAM audit log entries from Cloud Logging into BigQuery through Pub/Sub and a Cloud Run service. You will finish the parser, deploy it, send test events, and test the error paths.
 
 **Prerequisites:**
 - Module 04 done (you have at least two `SANDBOX_RESULT` log entries).
@@ -51,7 +57,165 @@ Response rules in `log-ingestion/main.py`:
 
 ---
 
-## Schema walkthrough
+## Steps
+
+In the 4-hour schedule this module is deploy-and-verify. The facilitator deploys `security-log-ingestion` with the solution parser before the lab. You verify the deployment and the pipeline, send test events, and confirm rows in BigQuery: steps 3 (verify only), 4, 5 and 6. The parser exercise (steps 1-2), the schema walkthrough, the dead-letter tests (step 7), the dedupe check (step 8) and some extra checks are in [Optional / take-home](#optional--take-home).
+
+### 3. Deploy (2 min: verify only)
+
+The facilitator runs `deploy.sh` before the lab. In class, run only the two verify commands. If you work on your own, run the script first (about 7 minutes).
+
+```bash
+cd log-ingestion
+./deploy.sh
+```
+
+This builds image `security-log-ingestion` into Artifact Registry repo `security-lab` and deploys Cloud Run service `security-log-ingestion` as `log-ingestion-sa`, with no unauthenticated access.
+
+Verify:
+
+```bash
+gcloud run services describe security-log-ingestion --region="$REGION" \
+  --format="value(status.url,spec.template.spec.serviceAccountName)"
+gcloud run services get-iam-policy security-log-ingestion --region="$REGION" \
+  --format="table(bindings.role,bindings.members)"
+```
+
+Expected: a `https://security-log-ingestion-...run.app` URL, `log-ingestion-sa@...`, and `roles/run.invoker` bound to `serviceAccount:pubsub-push-sa@your-gcp-project-id.iam.gserviceaccount.com`. `allUsers` must not appear.
+
+### 4. Verify the sink, push subscription and DLQ (3 min)
+
+Terraform created these. Confirm:
+
+```bash
+gcloud logging sinks describe security-logs-to-pubsub \
+  --format="value(destination,filter,writerIdentity)"
+```
+
+Expected: destination `pubsub.googleapis.com/projects/your-gcp-project-id/topics/security-logs`, the filter shown above, and a writer identity. The writer identity needs `roles/pubsub.publisher` on the topic (checked in Optional / take-home).
+
+```bash
+gcloud pubsub subscriptions describe security-logs-push \
+  --format="yaml(pushConfig,deadLetterPolicy,ackDeadlineSeconds)"
+```
+
+Expected:
+
+```yaml
+deadLetterPolicy:
+  deadLetterTopic: projects/your-gcp-project-id/topics/security-logs-dlq
+  maxDeliveryAttempts: 5
+pushConfig:
+  oidcToken:
+    serviceAccountEmail: pubsub-push-sa@your-gcp-project-id.iam.gserviceaccount.com
+  pushEndpoint: https://security-log-ingestion-....run.app/pubsub/push
+```
+
+### 5. Send test events (2 min)
+
+```bash
+cd seed-data
+./write_sample_logs.sh
+```
+
+The script writes sample `codemender` entries from `seed-data/log_entries/` with `gcloud logging write codemender '<json>' --payload-type=json`. Wait about 60 seconds for the sink and push delivery.
+
+Watch the service log:
+
+```bash
+FILTER='resource.type="cloud_run_revision"'
+FILTER="$FILTER"' AND resource.labels.service_name="security-log-ingestion"'
+gcloud logging read "$FILTER" \
+  --limit=20 --freshness=10m --format="value(timestamp,httpRequest.status,textPayload)"
+```
+
+Expected: `POST /pubsub/push` requests with status 200 or 204.
+
+### 6. Query BigQuery to confirm (3 min)
+
+```bash
+bq query --use_legacy_sql=false '
+SELECT event_type, source, COUNT(*) AS n, MAX(event_timestamp) AS latest
+FROM `your-gcp-project-id.security_lab.security_events`
+WHERE DATE(event_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+GROUP BY event_type, source
+ORDER BY n DESC'
+```
+
+Expected: rows for `CODEMENDER_*` with `source=codemender`, and `SANDBOX_RESULT` with `source=sandbox` (from Module 04).
+
+```bash
+bq query --use_legacy_sql=false '
+SELECT run_id, issue_id, poc_before, poc_after, patch_applied, unit_tests_passed, verdict
+FROM `your-gcp-project-id.security_lab.sandbox_runs`
+ORDER BY finished_at DESC
+LIMIT 5'
+```
+
+Expected: your Module 04 runs, with `PATCH_VERIFIED` (reference patch) and `PATCH_FAILED` (`none`).
+
+---
+
+## Check your work
+
+- [ ] `security-log-ingestion` is deployed; only `pubsub-push-sa` can invoke it.
+- [ ] Sink and push subscription (OIDC, `/pubsub/push`, dead-letter topic `security-logs-dlq`, `maxDeliveryAttempts: 5`) confirmed.
+- [ ] `security_events` and `sandbox_runs` have new rows.
+
+If you did the optional steps:
+
+- [ ] Parser unit tests pass.
+- [ ] Topic IAM and the DLQ pull subscription confirmed; `codemender.findings` has new rows.
+- [ ] Malformed message produced an `ingestion_errors` row.
+- [ ] Forced failure ended up in `security-logs-dlq-sub`; the service env var is restored.
+- [ ] Dedupe query ran.
+
+## Troubleshooting pointers
+
+See [troubleshooting.md](troubleshooting.md#log-ingestion) for push 403, messages piling up in the DLQ, and schema mismatch errors in `ingestion_errors`.
+
+## What you built
+
+- A log pipeline: Cloud Logging sink -> Pub/Sub push (OIDC) -> Cloud Run -> BigQuery.
+- Safe failure handling: bad input is recorded and acknowledged; transient failures retry and then dead-letter.
+- Queryable tables (`security_events`, `sandbox_runs`) that the agent's MCP tools read in Modules 06-08.
+
+## Optional / take-home
+
+These steps do not fit the 4-hour schedule. In class the facilitator deploys the solution parser. The parser starter (`starter/log-ingestion/parser.py`) is a take-home exercise.
+
+### Extra checks for steps 4 and 6
+
+The sink writer identity needs `roles/pubsub.publisher` on the topic:
+
+```bash
+gcloud pubsub topics get-iam-policy security-logs
+```
+
+The dead-letter pull subscription:
+
+```bash
+gcloud pubsub subscriptions describe security-logs-dlq-sub --format="value(topic)"
+```
+
+Expected: `projects/your-gcp-project-id/topics/security-logs-dlq`.
+
+Dead-lettering also needs the Pub/Sub service agent (`service-<PROJECT_NUMBER>@gcp-sa-pubsub.iam.gserviceaccount.com`) to have publisher on `security-logs-dlq` and subscriber on `security-logs-push`. Terraform grants this; confirm in your environment.
+
+Findings written by the pipeline:
+
+```bash
+bq query --use_legacy_sql=false '
+SELECT finding_id, issue_id, file_path, cwe_id, severity, status, wiz_issue_id
+FROM `your-gcp-project-id.codemender.findings`
+WHERE DATE(created_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
+ORDER BY created_at DESC
+LIMIT 10'
+```
+
+Expected: findings from the sample log entries (for example `CM-0001`, `app/db.py`, `CWE-89`).
+
+### Schema walkthrough
 
 Canonical schemas live in `infra/terraform/schemas/<table>.json`. `log-ingestion/schema/` holds identical copies plus `ddl.sql`.
 
@@ -77,10 +241,6 @@ Canonical schemas live in `infra/terraform/schemas/<table>.json`. `log-ingestion
 **`codemender.findings`**: the existing table read by the existing MCP tools. `CODEMENDER_FINDING` events add rows here (`finding_id`, `issue_id`, `repository`, `file_path`, `line_number`, `cwe_id`, `severity`, `status`, `wiz_issue_id`, `created_at`, ...).
 
 **`security_lab.ingestion_errors`**: `received_at`, `message_id`, `insert_id`, `error`, `raw_message`.
-
----
-
-## Steps
 
 ### 1. Complete the parser TODOs (12 min)
 
@@ -117,119 +277,6 @@ OK
 ```
 
 The tests stub `google.cloud.bigquery` through `sys.modules`, so no Google client libraries are needed locally.
-
-### 3. Deploy (7 min)
-
-```bash
-cd log-ingestion
-./deploy.sh
-```
-
-This builds image `security-log-ingestion` into Artifact Registry repo `security-lab` and deploys Cloud Run service `security-log-ingestion` as `log-ingestion-sa`, with no unauthenticated access.
-
-Verify:
-
-```bash
-gcloud run services describe security-log-ingestion --region="$REGION" \
-  --format="value(status.url,spec.template.spec.serviceAccountName)"
-gcloud run services get-iam-policy security-log-ingestion --region="$REGION" \
-  --format="table(bindings.role,bindings.members)"
-```
-
-Expected: a `https://security-log-ingestion-...run.app` URL, `log-ingestion-sa@...`, and `roles/run.invoker` bound to `serviceAccount:pubsub-push-sa@your-gcp-project-id.iam.gserviceaccount.com`. `allUsers` must not appear.
-
-### 4. Verify the sink, push subscription and DLQ (5 min)
-
-Terraform created these. Confirm:
-
-```bash
-gcloud logging sinks describe security-logs-to-pubsub \
-  --format="value(destination,filter,writerIdentity)"
-```
-
-Expected: destination `pubsub.googleapis.com/projects/your-gcp-project-id/topics/security-logs`, the filter shown above, and a writer identity. The writer identity needs `roles/pubsub.publisher` on the topic:
-
-```bash
-gcloud pubsub topics get-iam-policy security-logs
-```
-
-```bash
-gcloud pubsub subscriptions describe security-logs-push \
-  --format="yaml(pushConfig,deadLetterPolicy,ackDeadlineSeconds)"
-```
-
-Expected:
-
-```yaml
-deadLetterPolicy:
-  deadLetterTopic: projects/your-gcp-project-id/topics/security-logs-dlq
-  maxDeliveryAttempts: 5
-pushConfig:
-  oidcToken:
-    serviceAccountEmail: pubsub-push-sa@your-gcp-project-id.iam.gserviceaccount.com
-  pushEndpoint: https://security-log-ingestion-....run.app/pubsub/push
-```
-
-```bash
-gcloud pubsub subscriptions describe security-logs-dlq-sub --format="value(topic)"
-```
-
-Expected: `projects/your-gcp-project-id/topics/security-logs-dlq`.
-
-Dead-lettering also needs the Pub/Sub service agent (`service-<PROJECT_NUMBER>@gcp-sa-pubsub.iam.gserviceaccount.com`) to have publisher on `security-logs-dlq` and subscriber on `security-logs-push`. Terraform grants this; confirm in your environment.
-
-### 5. Send test events (3 min)
-
-```bash
-cd seed-data
-./write_sample_logs.sh
-```
-
-The script writes sample `codemender` entries from `seed-data/log_entries/` with `gcloud logging write codemender '<json>' --payload-type=json`. Wait about 60 seconds for the sink and push delivery.
-
-Watch the service log:
-
-```bash
-gcloud logging read \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="security-log-ingestion"' \
-  --limit=20 --freshness=10m --format="value(timestamp,httpRequest.status,textPayload)"
-```
-
-Expected: `POST /pubsub/push` requests with status 200 or 204.
-
-### 6. Query BigQuery to confirm (3 min)
-
-```bash
-bq query --use_legacy_sql=false '
-SELECT event_type, source, COUNT(*) AS n, MAX(event_timestamp) AS latest
-FROM `your-gcp-project-id.security_lab.security_events`
-WHERE DATE(event_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
-GROUP BY event_type, source
-ORDER BY n DESC'
-```
-
-Expected: rows for `CODEMENDER_*` with `source=codemender`, and `SANDBOX_RESULT` with `source=sandbox` (from Module 04).
-
-```bash
-bq query --use_legacy_sql=false '
-SELECT run_id, issue_id, poc_before, poc_after, patch_applied, unit_tests_passed, verdict
-FROM `your-gcp-project-id.security_lab.sandbox_runs`
-ORDER BY finished_at DESC
-LIMIT 5'
-```
-
-Expected: your Module 04 runs, with `PATCH_VERIFIED` (reference patch) and `PATCH_FAILED` (`none`).
-
-```bash
-bq query --use_legacy_sql=false '
-SELECT finding_id, issue_id, file_path, cwe_id, severity, status, wiz_issue_id
-FROM `your-gcp-project-id.codemender.findings`
-WHERE DATE(created_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
-ORDER BY created_at DESC
-LIMIT 10'
-```
-
-Expected: findings from the sample log entries (for example `CM-0001`, `app/db.py`, `CWE-89`).
 
 ### 7. Dead-letter tests (7 min)
 
@@ -301,25 +348,3 @@ SELECT * EXCEPT(rn) FROM (
   WHERE DATE(event_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
 ) WHERE rn = 1
 ```
-
----
-
-## Check your work
-
-- [ ] Parser unit tests pass.
-- [ ] `security-log-ingestion` is deployed; only `pubsub-push-sa` can invoke it.
-- [ ] Sink, push subscription (OIDC, `/pubsub/push`), DLQ topic and DLQ pull subscription confirmed, with `maxDeliveryAttempts: 5`.
-- [ ] `security_events`, `sandbox_runs` and `codemender.findings` have new rows.
-- [ ] Malformed message produced an `ingestion_errors` row.
-- [ ] Forced failure ended up in `security-logs-dlq-sub`; the service env var is restored.
-- [ ] Dedupe query ran.
-
-## Troubleshooting pointers
-
-See [troubleshooting.md](troubleshooting.md#log-ingestion) for push 403, messages piling up in the DLQ, and schema mismatch errors in `ingestion_errors`.
-
-## What you built
-
-- A log pipeline: Cloud Logging sink -> Pub/Sub push (OIDC) -> Cloud Run -> BigQuery.
-- Safe failure handling: bad input is recorded and acknowledged; transient failures retry and then dead-letter.
-- Queryable tables (`security_events`, `sandbox_runs`) that the agent's MCP tools read in Modules 06-08.

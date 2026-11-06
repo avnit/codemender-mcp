@@ -1,14 +1,20 @@
 # Module 04: Validation sandbox
 
-**Goal:** Run a proof-of-concept exploit and a candidate patch inside an isolated Cloud Run Job, and get a verdict back. You will start the job locally, from the command line, from GitHub Actions, and from the agent.
+**Time:** 15 minutes (deploy and verify)
 
-**Time:** 45 minutes
+**Learning objectives**
+
+- Explain why the sandbox is a gen2 Cloud Run Job with no egress and no permissions, and not gVisor.
+- Stage a source tarball and a patch in the inputs bucket.
+- Run the job and read the `SANDBOX_RESULT` verdict in Cloud Logging.
+
+**Goal:** Run a proof-of-concept exploit and a candidate patch inside an isolated Cloud Run Job, and get a verdict back. You will start the job locally, from the command line, from GitHub Actions, and from the agent.
 
 **Prerequisites:**
 - Modules 00-03 done.
 - `gcloud` authenticated against `your-gcp-project-id`, with `REGION=us-central1`.
 - Terraform from `infra/terraform/` applied (the facilitator did this on Days 1-3).
-- Docker installed locally (for `run_local.sh`).
+- Docker installed locally (only for `run_local.sh`, an optional step).
 - The `payment-service` repo pushed to `your-github-org` from `sample-app/`.
 
 Set these shell variables for the module:
@@ -75,7 +81,11 @@ PoC convention: a PoC test in `sample-app/tests/poc/test_poc_*.py` **passes** wh
 
 ## Steps
 
-### 1. Inspect the network and job Terraform (5 min)
+In the 4-hour schedule this module is deploy-and-verify. The facilitator deploys the job before the lab. You verify it, stage inputs, run it twice, and read the verdicts: steps 1, 2 (verify only), 4, 5 and 7. Steps 3, 6, 8 and 9 are in [Optional / take-home](#optional--take-home).
+
+### 1. Inspect the network and job Terraform (3 min)
+
+In class, run only the two `gcloud` checks below (firewall rules and the IAM check). Reading the Terraform with `grep` is optional.
 
 ```bash
 cd infra/terraform
@@ -93,9 +103,11 @@ Check these points in the job resource:
 Confirm the deployed firewall rules:
 
 ```bash
+COLS="name,direction,priority,destinationRanges.list()"
+COLS="$COLS,denied[].IPProtocol.list(),allowed[].map().firewall_rule().list()"
 gcloud compute firewall-rules list \
   --filter="network~sandbox-vpc" \
-  --format="table(name,direction,priority,destinationRanges.list(),denied[].IPProtocol.list(),allowed[].map().firewall_rule().list())"
+  --format="table($COLS)"
 ```
 
 Expected (two rows):
@@ -117,7 +129,9 @@ gcloud projects get-iam-policy "$GCP_PROJECT_ID" \
 
 Expected: no output.
 
-### 2. Build and deploy the image (8 min)
+### 2. Build and deploy the image (1 min: verify only)
+
+The facilitator runs `deploy.sh` before the lab. In class, run only the `gcloud run jobs describe` check at the end of this step. If you work on your own, run the script first (about 8 minutes).
 
 ```bash
 cd sandbox
@@ -134,6 +148,96 @@ gcloud run jobs describe codemender-sandbox --region="$REGION" \
 ```
 
 Expected: an image path ending in `security-lab/codemender-sandbox:...` and `sandbox-runner-sa@your-gcp-project-id.iam.gserviceaccount.com`.
+
+### 4. Stage inputs in the bucket (4 min)
+
+```bash
+cd sandbox
+# or use the SHA of the pushed payment-service repo
+export COMMIT_SHA=$(git -C ../sample-app rev-parse HEAD)
+export RUN_ID="run-$(date +%Y%m%d%H%M%S)"
+./stage_inputs.sh
+```
+
+`stage_inputs.sh` creates the source tarball and uploads the patch. Check `sandbox/README.md` for its exact arguments (repository, commit SHA, issue ID, patch file, run ID).
+
+Verify:
+
+```bash
+gcloud storage ls "gs://${SANDBOX_BUCKET}/sources/${GITHUB_ORG}__payment-service/"
+gcloud storage ls "gs://${SANDBOX_BUCKET}/patches/CM-0001/"
+```
+
+Expected: `<COMMIT_SHA>.tar.gz` and `<RUN_ID>.diff`.
+
+### 5. Execute the job with env overrides (5 min)
+
+```bash
+SRC="gs://${SANDBOX_BUCKET}/sources/${GITHUB_ORG}__payment-service/${COMMIT_SHA}.tar.gz"
+PATCH="gs://${SANDBOX_BUCKET}/patches/CM-0001/${RUN_ID}.diff"
+ENV_VARS="RUN_ID=${RUN_ID},REPOSITORY=${GITHUB_ORG}/payment-service,COMMIT_SHA=${COMMIT_SHA}"
+ENV_VARS="${ENV_VARS},SOURCE_URI=${SRC},PATCH_URI=${PATCH},ISSUE_ID=CM-0001,POC_TEST=tests/poc"
+gcloud run jobs execute codemender-sandbox \
+  --region="$REGION" \
+  --update-env-vars="$ENV_VARS" \
+  --wait
+```
+
+Expected: `Execution [codemender-sandbox-xxxxx] has successfully completed.` Note the execution name.
+
+Run it again with `PATCH_URI=none` and a new `RUN_ID`. The execution still completes successfully (the runner exits 0 after printing a result). The verdict is in the log, not in the exit status. Confirm in your environment whether `runner.py` exits non-zero on `ERROR`.
+
+### 7. Read SANDBOX_RESULT in Cloud Logging (2 min)
+
+```bash
+FILTER='resource.type="cloud_run_job" AND resource.labels.job_name="codemender-sandbox"'
+FILTER="$FILTER"' AND jsonPayload.event_type="SANDBOX_RESULT"'
+COLS="timestamp,jsonPayload.run_id,jsonPayload.issue_id"
+COLS="$COLS,jsonPayload.poc_before,jsonPayload.poc_after,jsonPayload.verdict"
+gcloud logging read "$FILTER" \
+  --limit=5 --freshness=1h \
+  --format="table($COLS)"
+```
+
+Expected:
+
+| RUN_ID | ISSUE_ID | POC_BEFORE | POC_AFTER | VERDICT |
+|---|---|---|---|---|
+| run-...(patch) | CM-0001 | EXPLOITABLE | NOT_EXPLOITABLE | PATCH_VERIFIED |
+| run-...(none) | CM-0001 | EXPLOITABLE | EXPLOITABLE | PATCH_FAILED |
+
+The entries also carry the label `component=codemender-sandbox`. The log sink `security-logs-to-pubsub` forwards these to ingestion (Module 05).
+
+---
+
+## Check your work
+
+- [ ] Firewall list shows deny-all at 65000 and restricted-VIP allow at 1000.
+- [ ] `sandbox-runner-sa` has no project-level roles.
+- [ ] The job uses the `codemender-sandbox` image and runs as `sandbox-runner-sa`.
+- [ ] Cloud run: `PATCH_VERIFIED` with the reference patch and `PATCH_FAILED` with `none` appear in Cloud Logging as `SANDBOX_RESULT` entries.
+
+If you did the optional steps:
+
+- [ ] Local run: `PATCH_VERIFIED` with the reference patch, `PATCH_FAILED` with `none`.
+- [ ] Egress test: github.com and pypi.org blocked; storage.googleapis.com reachable.
+- [ ] `sandbox-validate.yml` ran through WIF and reported `PATCH_VERIFIED`.
+- [ ] The agent asked for confirmation before calling `start_sandbox_validation` with `confirmed=True`.
+
+## Troubleshooting pointers
+
+See [troubleshooting.md](troubleshooting.md#sandbox-cloud-run-job) for: job cannot read GCS, `iam.serviceAccountUser` errors, timeouts, missing dependencies. For WIF errors see [troubleshooting.md](troubleshooting.md#workload-identity-federation).
+
+## What you built
+
+- An isolated validation sandbox: Cloud Run Job (gen2 microVM), no internet egress, no IAM permissions, ephemeral.
+- A staging convention (source tarball + patch in GCS) that works without egress.
+- Three ways to start a validation run: CLI, GitHub Actions through WIF, and the agent with human confirmation.
+- A structured `SANDBOX_RESULT` log line that the ingestion pipeline turns into `security_lab.sandbox_runs` rows in the next module.
+
+## Optional / take-home
+
+These steps do not fit the 4-hour schedule. The facilitator may demo step 8. Step 9 is repeated in Module 08 Part 2, so you do it there.
 
 ### 3. Run locally first (7 min)
 
@@ -156,39 +260,6 @@ Expected last line (formatted here for reading; the real output is one line):
 
 Now run with no patch. Expected: `"poc_before": "EXPLOITABLE"`, `"poc_after": "EXPLOITABLE"`, `"patch_applied": false`, `"verdict": "PATCH_FAILED"`. The code is still exploitable.
 
-### 4. Stage inputs in the bucket (5 min)
-
-```bash
-cd sandbox
-export COMMIT_SHA=$(git -C ../sample-app rev-parse HEAD)   # or the SHA of the pushed payment-service repo
-export RUN_ID="run-$(date +%Y%m%d%H%M%S)"
-./stage_inputs.sh
-```
-
-`stage_inputs.sh` creates the source tarball and uploads the patch. Check `sandbox/README.md` for its exact arguments (repository, commit SHA, issue ID, patch file, run ID).
-
-Verify:
-
-```bash
-gcloud storage ls "gs://${SANDBOX_BUCKET}/sources/${GITHUB_ORG}__payment-service/"
-gcloud storage ls "gs://${SANDBOX_BUCKET}/patches/CM-0001/"
-```
-
-Expected: `<COMMIT_SHA>.tar.gz` and `<RUN_ID>.diff`.
-
-### 5. Execute the job with env overrides (5 min)
-
-```bash
-gcloud run jobs execute codemender-sandbox \
-  --region="$REGION" \
-  --update-env-vars="RUN_ID=${RUN_ID},REPOSITORY=${GITHUB_ORG}/payment-service,COMMIT_SHA=${COMMIT_SHA},SOURCE_URI=gs://${SANDBOX_BUCKET}/sources/${GITHUB_ORG}__payment-service/${COMMIT_SHA}.tar.gz,PATCH_URI=gs://${SANDBOX_BUCKET}/patches/CM-0001/${RUN_ID}.diff,ISSUE_ID=CM-0001,POC_TEST=tests/poc" \
-  --wait
-```
-
-Expected: `Execution [codemender-sandbox-xxxxx] has successfully completed.` Note the execution name.
-
-Run it again with `PATCH_URI=none` and a new `RUN_ID`. The execution still completes successfully (the runner exits 0 after printing a result). The verdict is in the log, not in the exit status. Confirm in your environment whether `runner.py` exits non-zero on `ERROR`.
-
 ### 6. Prove egress is blocked (5 min)
 
 Run a one-off execution that overrides the command and tries to reach the internet and a Google API:
@@ -207,8 +278,9 @@ for url in ['https://github.com','https://pypi.org/simple/','https://storage.goo
 This assumes the image entrypoint is `python`. If `sandbox/Dockerfile` uses a different entrypoint, add `--command=python` (confirm in your environment). Read the output:
 
 ```bash
-gcloud logging read \
-  'resource.type="cloud_run_job" AND resource.labels.job_name="codemender-sandbox" AND textPayload:("BLOCKED" OR "REACHABLE")' \
+FILTER='resource.type="cloud_run_job" AND resource.labels.job_name="codemender-sandbox"'
+FILTER="$FILTER"' AND textPayload:("BLOCKED" OR "REACHABLE")'
+gcloud logging read "$FILTER" \
   --limit=10 --format="value(textPayload)" --freshness=10m
 ```
 
@@ -221,24 +293,6 @@ REACHABLE https://storage.googleapis.com
 ```
 
 `storage.googleapis.com` resolves to the restricted VIP and is allowed. The other two time out or fail DNS. A 403/404 HTTP error from storage still counts as reachable.
-
-### 7. Read SANDBOX_RESULT in Cloud Logging (3 min)
-
-```bash
-gcloud logging read \
-  'resource.type="cloud_run_job" AND resource.labels.job_name="codemender-sandbox" AND jsonPayload.event_type="SANDBOX_RESULT"' \
-  --limit=5 --freshness=1h \
-  --format="table(timestamp,jsonPayload.run_id,jsonPayload.issue_id,jsonPayload.poc_before,jsonPayload.poc_after,jsonPayload.verdict)"
-```
-
-Expected:
-
-| RUN_ID | ISSUE_ID | POC_BEFORE | POC_AFTER | VERDICT |
-|---|---|---|---|---|
-| run-...(patch) | CM-0001 | EXPLOITABLE | NOT_EXPLOITABLE | PATCH_VERIFIED |
-| run-...(none) | CM-0001 | EXPLOITABLE | EXPLOITABLE | PATCH_FAILED |
-
-The entries also carry the label `component=codemender-sandbox`. The log sink `security-logs-to-pubsub` forwards these to ingestion (Module 05).
 
 ### 8. Trigger from GitHub via Workload Identity Federation (5 min)
 
@@ -289,26 +343,3 @@ gs://your-gcp-project-id-sandbox-inputs/patches/CM-0001/<RUN_ID>.diff and the co
 Expected: the agent describes the run and asks for confirmation. Reply `yes`. It starts the job, then reports `PATCH_VERIFIED` once `get_sandbox_result` returns a finished run.
 
 If you have not finished Module 07 yet, come back to this step later. Module 08 Part 2 repeats it.
-
----
-
-## Check your work
-
-- [ ] Firewall list shows deny-all at 65000 and restricted-VIP allow at 1000.
-- [ ] `sandbox-runner-sa` has no project-level roles.
-- [ ] Local run: `PATCH_VERIFIED` with the reference patch, `PATCH_FAILED` with `none`.
-- [ ] Cloud run: the same two verdicts appear in Cloud Logging as `SANDBOX_RESULT` entries.
-- [ ] Egress test: github.com and pypi.org blocked; storage.googleapis.com reachable.
-- [ ] `sandbox-validate.yml` ran through WIF and reported `PATCH_VERIFIED`.
-- [ ] The agent asked for confirmation before calling `start_sandbox_validation` with `confirmed=True`.
-
-## Troubleshooting pointers
-
-See [troubleshooting.md](troubleshooting.md#sandbox-cloud-run-job) for: job cannot read GCS, `iam.serviceAccountUser` errors, timeouts, missing dependencies. For WIF errors see [troubleshooting.md](troubleshooting.md#workload-identity-federation).
-
-## What you built
-
-- An isolated validation sandbox: Cloud Run Job (gen2 microVM), no internet egress, no IAM permissions, ephemeral.
-- A staging convention (source tarball + patch in GCS) that works without egress.
-- Three ways to start a validation run: CLI, GitHub Actions through WIF, and the agent with human confirmation.
-- A structured `SANDBOX_RESULT` log line that the ingestion pipeline turns into `security_lab.sandbox_runs` rows in the next module.

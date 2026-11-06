@@ -1,8 +1,14 @@
 # Module 06: Data insights with BigQuery
 
-**Goal:** Put SCC findings, Model Armor logs, VPC Service Controls violations and the lab tables in BigQuery. Query them two ways: with the Data Insights agent in Gemini Enterprise for ad-hoc questions, and with the custom MCP tools the security agent calls.
+**Time:** 10 minutes (guided)
 
-**Time:** 35 minutes
+**Learning objectives**
+
+- List the BigQuery datasets that hold SCC, Model Armor, VPC SC, CodeMender and sandbox data.
+- Ask the Data Insights agent security questions in natural language and check the answers against reference SQL.
+- Explain when to use Data Insights and when to use the agent's fixed MCP tools.
+
+**Goal:** Put SCC findings, Model Armor logs, VPC Service Controls violations and the lab tables in BigQuery. Query them two ways: with the Data Insights agent in Gemini Enterprise for ad-hoc questions, and with the custom MCP tools the security agent calls.
 
 **Prerequisites:**
 - Module 05 done.
@@ -29,7 +35,11 @@ The `security_logs` table names are created by the sink from the log ID. Confirm
 
 ## Steps
 
-### 1. Load seed data (5 min)
+In the 4-hour schedule this module is short and guided. The facilitator loads the seed data, checks the sinks and grants participant IAM before the lab. You check the row counts, open the Data Insights agent, and ask Q1, Q4 and Q6. Steps 2, 3, 4 and 7, and questions Q2, Q3, Q5 and Q7, are in [Optional / take-home](#optional--take-home).
+
+### 1. Load seed data (2 min: verify only)
+
+The facilitator runs the loader before the lab. In class, run only the row-count check below.
 
 ```bash
 cd seed-data
@@ -53,6 +63,95 @@ done
 ```
 
 Expected: a non-zero count for each table.
+
+### 5. Open the Data Insights agent in Gemini Enterprise (2 min)
+
+The UI changes often. These steps are a guide; confirm in your environment.
+
+1. Open the Gemini Enterprise app for the lab.
+2. Go to **Agents** and open the Data Insights agent (an administrator may need to enable it first under the app's agent settings).
+3. Add BigQuery as a data source and select project `your-gcp-project-id`, datasets `security_lab`, `codemender`, `scc_export`, `security_logs`.
+4. Start a new chat with the agent.
+
+### 6. Ask natural-language questions (6 min)
+
+Ask Q1, Q4 and Q6. Q2, Q3, Q5 and Q7 are in Optional / take-home. Compare the SQL the agent shows with the reference SQL. The agent's SQL does not need to match word for word; the result should.
+
+**Q1. "Which active SCC findings are HIGH or CRITICAL, by category, in the last 7 days?"**
+
+```sql
+SELECT finding.category AS category, finding.severity AS severity, COUNT(*) AS findings
+FROM `your-gcp-project-id.scc_export.findings`
+WHERE finding.state = 'ACTIVE'
+  AND finding.severity IN ('HIGH', 'CRITICAL')
+  AND event_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+GROUP BY category, severity
+ORDER BY findings DESC;
+```
+
+**Q4. "Which CodeMender findings are still open, and which Wiz issue does each map to?"**
+
+```sql
+SELECT finding_id, repository, file_path, line_number, cwe_id, severity, status, wiz_issue_id
+FROM `your-gcp-project-id.codemender.findings`
+WHERE status IN ('DETECTED', 'OPEN', 'PATCH_GENERATED')
+ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2
+                       WHEN 'MEDIUM' THEN 3 ELSE 4 END,
+         created_at;
+```
+
+Expected with seed data: `CM-0001`..`CM-0004` mapped to `wiz-issue-0001`..`wiz-issue-0004` (exact statuses depend on seed data and your Module 04-05 runs).
+
+**Q6. "Which repository, Dockerfile and Terraform file produced the payment-service Cloud Run service?"**
+
+```sql
+SELECT resource_id, resource_name, image, base_image, repository,
+       dockerfile_path, terraform_path, commit_sha
+FROM `your-gcp-project-id.security_lab.code_to_cloud_map`
+WHERE resource_id = '//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service';
+```
+
+Expected: `base_image = python:3.8-slim-buster`, repository `your-github-org/payment-service`.
+
+### When to use which
+
+| Use | Data Insights agent | Custom MCP tools |
+|---|---|---|
+| Who asks | A human analyst | The security agent |
+| Query shape | Free-form, generated SQL | Fixed SQL with parameters |
+| Repeatability | Varies by phrasing | Same input, same query |
+| Good for | Exploring, one-off questions, building a new query | Triage and investigation steps the agent repeats every time |
+| Risk | Generated SQL may be wrong; review it | Only the questions the tool author anticipated |
+
+A common pattern: explore with Data Insights, then turn a useful query into a new MCP tool (Module 07).
+
+---
+
+## Check your work
+
+- [ ] All seven tables have rows.
+- [ ] You can open the Data Insights agent.
+- [ ] Data Insights answered Q1, Q4 and Q6 with results that match the reference SQL.
+
+If you did the optional steps:
+
+- [ ] Both BigQuery log sinks exist and point at `security_logs`.
+- [ ] You have `roles/geminidataanalytics.dataAgentUser`.
+- [ ] (If the agent is running) the agent called `query_scc_findings`, `query_model_armor_logs` and `query_vpcsc_violations` with the expected parameters.
+
+## Troubleshooting pointers
+
+See [troubleshooting.md](troubleshooting.md#bigquery-and-data-insights) if the Data Insights agent cannot see a dataset or queries fail with permission errors.
+
+## What you built
+
+- One place in BigQuery for SCC, Model Armor, VPC SC, CodeMender and sandbox data.
+- Reference SQL for each table.
+- A clear split: Data Insights for human exploration, MCP tools for the agent's repeatable queries.
+
+## Optional / take-home
+
+These steps do not fit the 4-hour schedule. The facilitator checks the sinks and participant IAM before the lab. Module 08 Part 1 calls the same MCP tools as step 7.
 
 ### 2. SCC continuous export to BigQuery (5 min, read or facilitator demo)
 
@@ -102,99 +201,6 @@ gcloud projects get-iam-policy "$GCP_PROJECT_ID" \
 
 Expected to include `roles/geminidataanalytics.dataAgentUser` and `roles/bigquery.jobUser`. Dataset-level `dataViewer` shows in `bq show --format=prettyjson your-gcp-project-id:security_lab` under `access`.
 
-### 5. Open the Data Insights agent in Gemini Enterprise (5 min)
-
-The UI changes often. These steps are a guide; confirm in your environment.
-
-1. Open the Gemini Enterprise app for the lab.
-2. Go to **Agents** and open the Data Insights agent (an administrator may need to enable it first under the app's agent settings).
-3. Add BigQuery as a data source and select project `your-gcp-project-id`, datasets `security_lab`, `codemender`, `scc_export`, `security_logs`.
-4. Start a new chat with the agent.
-
-### 6. Ask natural-language questions (8 min)
-
-Ask each question. Compare the SQL the agent shows with the reference SQL. The agent's SQL does not need to match word for word; the result should.
-
-**Q1. "Which active SCC findings are HIGH or CRITICAL, by category, in the last 7 days?"**
-
-```sql
-SELECT finding.category AS category, finding.severity AS severity, COUNT(*) AS findings
-FROM `your-gcp-project-id.scc_export.findings`
-WHERE finding.state = 'ACTIVE'
-  AND finding.severity IN ('HIGH', 'CRITICAL')
-  AND event_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
-GROUP BY category, severity
-ORDER BY findings DESC;
-```
-
-**Q2. "Which Model Armor filters matched most often this week?"**
-
-```sql
-SELECT f AS filter, COUNT(*) AS matches
-FROM `your-gcp-project-id.security_logs.modelarmor_googleapis_com_sanitize_operations`,
-  UNNEST(SPLIT(jsonPayload.matched_filters, ',')) AS f
-WHERE jsonPayload.filter_match_state = 'MATCH_FOUND'
-  AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
-GROUP BY filter
-ORDER BY matches DESC;
-```
-
-**Q3. "Who caused VPC Service Controls violations, on which service and perimeter?"**
-
-```sql
-SELECT
-  protopayload_auditlog.authenticationInfo.principalEmail AS principal,
-  protopayload_auditlog.serviceName AS service,
-  JSON_VALUE(protopayload_auditlog.metadataJson, '$.securityPolicyInfo.servicePerimeterName') AS perimeter,
-  JSON_VALUE(protopayload_auditlog.metadataJson, '$.violationReason') AS reason,
-  COUNT(*) AS violations
-FROM `your-gcp-project-id.security_logs.cloudaudit_googleapis_com_policy`
-WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
-GROUP BY principal, service, perimeter, reason
-ORDER BY violations DESC;
-```
-
-**Q4. "Which CodeMender findings are still open, and which Wiz issue does each map to?"**
-
-```sql
-SELECT finding_id, repository, file_path, line_number, cwe_id, severity, status, wiz_issue_id
-FROM `your-gcp-project-id.codemender.findings`
-WHERE status IN ('DETECTED', 'OPEN', 'PATCH_GENERATED')
-ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END, created_at;
-```
-
-Expected with seed data: `CM-0001`..`CM-0004` mapped to `wiz-issue-0001`..`wiz-issue-0004` (exact statuses depend on seed data and your Module 04-05 runs).
-
-**Q5. "Show every sandbox run and its verdict for CM-0001."**
-
-```sql
-SELECT run_id, execution_name, commit_sha, poc_before, poc_after,
-       patch_applied, unit_tests_passed, tests_total, tests_failed, verdict, finished_at
-FROM `your-gcp-project-id.security_lab.sandbox_runs`
-WHERE issue_id = 'CM-0001'
-ORDER BY finished_at DESC;
-```
-
-**Q6. "Which repository, Dockerfile and Terraform file produced the payment-service Cloud Run service?"**
-
-```sql
-SELECT resource_id, resource_name, image, base_image, repository, dockerfile_path, terraform_path, commit_sha
-FROM `your-gcp-project-id.security_lab.code_to_cloud_map`
-WHERE resource_id = '//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service';
-```
-
-Expected: `base_image = python:3.8-slim-buster`, repository `your-github-org/payment-service`.
-
-**Q7. "How many security events of each type arrived per day this week?"**
-
-```sql
-SELECT DATE(event_timestamp) AS day, event_type, severity, COUNT(*) AS events
-FROM `your-gcp-project-id.security_lab.security_events`
-WHERE DATE(event_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
-GROUP BY day, event_type, severity
-ORDER BY day DESC, events DESC;
-```
-
 ### 7. Use the custom MCP tools from the agent (5 min)
 
 The security agent does not use the Data Insights agent. It calls fixed, parameterized queries in the custom MCP server (`mcp-server/services/security_data_service.py`):
@@ -225,34 +231,52 @@ Expected tool call: `query_vpcsc_violations(service="bigquery.googleapis.com", d
 
 You can also call the tools directly without the agent. Use the MCP Inspector or the test client described in `mcp-server/` (confirm in your environment).
 
-### When to use which
+### More Data Insights questions (Q2, Q3, Q5, Q7)
 
-| Use | Data Insights agent | Custom MCP tools |
-|---|---|---|
-| Who asks | A human analyst | The security agent |
-| Query shape | Free-form, generated SQL | Fixed SQL with parameters |
-| Repeatability | Varies by phrasing | Same input, same query |
-| Good for | Exploring, one-off questions, building a new query | Triage and investigation steps the agent repeats every time |
-| Risk | Generated SQL may be wrong; review it | Only the questions the tool author anticipated |
+**Q2. "Which Model Armor filters matched most often this week?"**
 
-A common pattern: explore with Data Insights, then turn a useful query into a new MCP tool (Module 07).
+```sql
+SELECT f AS filter, COUNT(*) AS matches
+FROM `your-gcp-project-id.security_logs.modelarmor_googleapis_com_sanitize_operations`,
+  UNNEST(SPLIT(jsonPayload.matched_filters, ',')) AS f
+WHERE jsonPayload.filter_match_state = 'MATCH_FOUND'
+  AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+GROUP BY filter
+ORDER BY matches DESC;
+```
 
----
+**Q3. "Who caused VPC Service Controls violations, on which service and perimeter?"**
 
-## Check your work
+```sql
+SELECT
+  protopayload_auditlog.authenticationInfo.principalEmail AS principal,
+  protopayload_auditlog.serviceName AS service,
+  JSON_VALUE(protopayload_auditlog.metadataJson,
+             '$.securityPolicyInfo.servicePerimeterName') AS perimeter,
+  JSON_VALUE(protopayload_auditlog.metadataJson, '$.violationReason') AS reason,
+  COUNT(*) AS violations
+FROM `your-gcp-project-id.security_logs.cloudaudit_googleapis_com_policy`
+WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+GROUP BY principal, service, perimeter, reason
+ORDER BY violations DESC;
+```
 
-- [ ] All seven tables have rows.
-- [ ] Both BigQuery log sinks exist and point at `security_logs`.
-- [ ] You have `roles/geminidataanalytics.dataAgentUser` and can open the Data Insights agent.
-- [ ] Data Insights answered at least three of Q1-Q7 with results that match the reference SQL.
-- [ ] (If the agent is running) the agent called `query_scc_findings`, `query_model_armor_logs` and `query_vpcsc_violations` with the expected parameters.
+**Q5. "Show every sandbox run and its verdict for CM-0001."**
 
-## Troubleshooting pointers
+```sql
+SELECT run_id, execution_name, commit_sha, poc_before, poc_after,
+       patch_applied, unit_tests_passed, tests_total, tests_failed, verdict, finished_at
+FROM `your-gcp-project-id.security_lab.sandbox_runs`
+WHERE issue_id = 'CM-0001'
+ORDER BY finished_at DESC;
+```
 
-See [troubleshooting.md](troubleshooting.md#bigquery-and-data-insights) if the Data Insights agent cannot see a dataset or queries fail with permission errors.
+**Q7. "How many security events of each type arrived per day this week?"**
 
-## What you built
-
-- One place in BigQuery for SCC, Model Armor, VPC SC, CodeMender and sandbox data.
-- Reference SQL for each table.
-- A clear split: Data Insights for human exploration, MCP tools for the agent's repeatable queries.
+```sql
+SELECT DATE(event_timestamp) AS day, event_type, severity, COUNT(*) AS events
+FROM `your-gcp-project-id.security_lab.security_events`
+WHERE DATE(event_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
+GROUP BY day, event_type, severity
+ORDER BY day DESC, events DESC;
+```

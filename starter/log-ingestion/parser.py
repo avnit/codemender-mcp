@@ -18,8 +18,9 @@ size-capped while staying valid JSON.
 # Before you fill in the TODOs, expect ClassifyTests, SecurityEventTests and
 # ParseLogEntryTests to fail. build_sandbox_run() and build_finding() call
 # classify(), so SandboxRunTests and FindingTests fail until classify() works.
-# Coercion, timestamp, truncation and schema-file tests should already pass.
-# Do classify() first.
+# TruncationTests.test_raw_payload_capped calls build_security_event(), so it
+# fails too. The other coercion, timestamp, truncation and schema-file tests
+# (12 of 42) should already pass. Do classify() first.
 
 from __future__ import annotations
 

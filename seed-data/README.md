@@ -29,7 +29,7 @@ All dates are fixed in October 2026 (UTC). See "Timestamps" below.
    - `CM-0003` CWE-250 over-permissioned SA, `terraform/main.tf` (HIGH)
    - `CM-0004` CWE-1104 outdated base image, `Dockerfile` (HIGH)
 5. **2026-10-14 15:41–16:46** – First patch for CM-0001 blocks the exploit but breaks 2 of 12 unit tests (`sbx-run-0001`, `PATCH_FAILED`). Second patch (parameterised query) passes (`sbx-run-0002`, `PATCH_VERIFIED`). CM-0001 status becomes `VERIFIED`; no PR yet (module 03/08 opens it).
-6. **2026-10-14 17:05** – Patch generated for CM-0002, uploaded as `patches/CM-0002/sbx-run-0003.diff`, not yet validated (module 04 runs it). CM-0003 and CM-0004 are `OPEN`.
+6. **2026-10-14 17:05** – Patch generated for CM-0002, uploaded as `patches/CM-0002/sbx-run-0003.diff`, not yet validated (Module 08 Part 3 validates it; Module 04 uses CM-0001). CM-0003 and CM-0004 are `OPEN`.
 7. **2026-10-15 10:12** – Model Armor blocks a prompt injection sent to the agent (`MATCH_FOUND`, `pi_and_jailbreak`), then a second one that also carries a malicious URI, then flags sensitive data in a model response (`sdp`).
 8. **2026-10-15 11:03** – VPC Service Controls blocks `svc-export@untrusted-project-000000.iam.gserviceaccount.com` from `203.0.113.45` trying to run a BigQuery job against `codemender.findings` (`RESOURCES_NOT_IN_SAME_SERVICE_PERIMETER`) and then reading `security_lab.security_events` (`NO_MATCHING_ACCESS_LEVEL`). An earlier, benign denial on 10-13 is a participant listing the sandbox bucket from outside the perimeter.
 
@@ -60,7 +60,7 @@ Notes on specific files:
 - **SCC rows** are a subset of the continuous-export schema, and the category used for container image vulnerabilities (`OS_VULNERABILITY`) is illustrative. Every description starts with `[illustrative seed data]`. Confirm in your environment.
 - **Model Armor and VPC SC rows** contain only the columns the lab uses. Real sink tables have many more columns; the field names follow NAMING.md and are marked "confirm in your environment".
 - **wiz_mock/** files were written by hand, not captured from a tenant. Each has a `_comment` saying so; field names and enum values must be verified against your tenant's schema. `issues.json` has a `_lab_mapping` key (Wiz issue to CodeMender ID) and `vulnerability_findings.json` has a `_lab_context` key; neither is a Wiz field.
-- **Line numbers** in findings (42, 27, 58, 1) are illustrative; they may not match the exact lines in `sample-app/`.
+- **Line numbers** in the payment-service findings (73, 23, 32, 7) match `sample-app/.codemender/mock-findings.json` and the files in `sample-app/`.
 
 ## Schemas
 

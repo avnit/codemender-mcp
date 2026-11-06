@@ -343,8 +343,8 @@ class SecurityDataService:
         #      summary, log_name FROM {target} WHERE <AND-joined where> ORDER BY event_timestamp DESC LIMIT @limit
         #   8. return self._run_query(sql, params, filters, target)
         # User input must only reach BigQuery as query parameters, never in the SQL string.
-        # Checked by: mcp-server/tests/test_new_tools.py TestSecurityDataService.test_security_events
-        #             and TestSecurityDataService.test_query_errors_become_error_dicts
+        # Checked by: mcp-server/tests/test_new_tools.py TestSecurityDataService.test_security_events,
+        #             test_limits_and_days_clamped and test_query_errors_become_error_dicts
         return {"error": "TODO"}
 
     # ------------------------------------------------------------------
@@ -373,7 +373,7 @@ class SecurityDataService:
         #      WHERE <OR-joined where> ORDER BY updated_at DESC LIMIT @limit
         #   8. return self._run_query(sql, params, filters, target)
         # Checked by: mcp-server/tests/test_new_tools.py TestSecurityDataService.test_code_to_cloud_and_finding_lookup
-        #             and TestServerTools.test_trace_code_to_cloud_falls_back_to_bigquery
+        #             (TestServerTools mocks this method, so it does not test your code here.)
         return {"error": "TODO"}
 
     def get_finding_repository(self, issue_id: str) -> Dict[str, Any]:

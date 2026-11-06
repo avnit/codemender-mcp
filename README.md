@@ -4,7 +4,7 @@ This branch turns the Code Mender MCP server into a 4-hour hands-on lab. Partici
 
 The original MCP server is still here, in `mcp-server/`, with new tools added. It is one of the four MCP servers the agent uses.
 
-> **Status: work in progress.** This commit has most of the lab. Some pieces are still being built. See [Branch status](#branch-status) before running the lab.
+> **Status: build complete, not yet run live.** All code, tests, lab modules, starter files, the facilitator guide and the PDFs are in this commit. See [Branch status](#branch-status) for what still needs a live environment to confirm.
 
 ## What participants build
 
@@ -23,6 +23,8 @@ The agent is used for two jobs:
 2. **Code remediation with a human in the loop.** The agent takes a Wiz or CodeMender finding, finds the vulnerable code, and writes a small patch. It tests the patch in an isolated sandbox, then opens a pull request with a security justification. A person reviews and merges it. The agent has no merge tool.
 
 ## Architecture
+
+![Architecture](lab/images/architecture.svg)
 
 ```mermaid
 flowchart LR
@@ -55,7 +57,7 @@ flowchart LR
 
 | Directory | Contents |
 |---|---|
-| `lab/` | Lab guide modules 00-08, troubleshooting, cleanup |
+| `lab/` | Lab guide modules 00-08, troubleshooting, cleanup, facilitator guide, architecture image |
 | `mcp-server/` | The custom MCP server (moved from the repo root), with new investigation, code-to-cloud, BigQuery, and sandbox tools |
 | `agent/` | ADK agent package, deploy script for Agent Engine, Gemini Enterprise registration steps |
 | `agent/skills/` | Seven skills: alert triage, investigation routing, code-to-cloud attribution, root cause and patch, sandbox verification, PR creation, BigQuery / Data Insights |
@@ -65,6 +67,7 @@ flowchart LR
 | `infra/terraform/` | All GCP resources: BigQuery, Pub/Sub, log sinks, Cloud Run, VPC, Secret Manager, Workload Identity Federation, IAM |
 | `seed-data/` | Sample findings, events, and logs, plus a loader, so every module works without live findings |
 | `starter/` | Participant versions of selected files with TODOs to complete |
+| `pdf/` | Participant guide and facilitator guide as PDFs, rendered from the Markdown (order in `lab/PDF-ORDER.txt`) |
 
 ## Moved files
 
@@ -91,7 +94,8 @@ cp .env.example .env      # set GCP and Wiz values
 
    ```bash
    cd infra/terraform
-   cp terraform.tfvars.example terraform.tfvars   # edit project_id, region, github_org, participant_members
+   # edit project_id, region, github_org, participant_members
+   cp terraform.tfvars.example terraform.tfvars
    terraform init
    terraform apply -target=<phase-1 targets from infra/terraform/README.md>
    terraform apply
@@ -146,36 +150,67 @@ The lab runs 4 hours, including setup checks and breaks. Participants spend most
 
 | Part | Tests |
 |---|---|
-| `mcp-server/` | 68 unit tests pass |
+| `mcp-server/` | 68 unit tests pass: 21 original, 47 new |
 | `log-ingestion/` | 74 unit tests pass |
 | `sandbox/` | 38 unit tests pass |
 | `seed-data/` | 28 unit tests pass |
 | `agent/` and skills | 51 unit tests pass (offline, no model calls) |
-| `infra/terraform/` | Not validated: Terraform was not installed in the build environment |
+| `sample-app/` app, PoC tests, patches | 8 tests pass, 7 Flask tests skipped (Flask was not installed in the build environment). With both reference patches applied, the unit tests pass and both PoC tests fail, as intended. |
 | `sample-app/` workflows | YAML parses; not run on a GitHub runner |
-| `sample-app/` app, PoC tests, patches | Included; app tests not yet run |
-| `lab/` modules 00-08, troubleshooting, cleanup | Draft |
-| `starter/` | Partial: 3 files so far |
+| `infra/terraform/` | Not validated: Terraform was not installed in the build environment |
+| `lab/` modules 00-08, troubleshooting, cleanup | Done, timed for 4 hours |
+| `lab/facilitator-guide.md` | Done: schedule, pre-deploy list, expected outputs, answer keys, reset steps |
+| `starter/` | Done: 5 files with TODOs |
+| `pdf/` | Participant guide and facilitator guide PDFs, rendered from the Markdown in the order listed in `lab/PDF-ORDER.txt` |
+
+The new `mcp-server` tools are two Wiz investigation tools (`wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`), code-to-cloud tracing (`trace_code_to_cloud`), four BigQuery queries (`query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`), and a sandbox pair (`start_sandbox_validation`, `get_sandbox_result`). `start_sandbox_validation` does nothing unless it is called with `confirmed=True`.
+
+The line numbers in `sample-app/.codemender/mock-findings.json` are fixed and match the app code.
 
 All Python files parse, all shell scripts pass `bash -n`, and a scan found no credentials. Every secret in the repo is a placeholder.
 
-The unit tests used mocks and stubbed modules, because the build environment could not install all dependencies. Nothing here has run against a live Wiz tenant, GCP project, or GitHub org yet.
-
-**Still to come**
-
-- Remaining starter files with TODOs, and `lab/facilitator-guide.md` (timings, expected outputs, answer key). The modules table links to it, but it is not written yet.
-- Re-timing the module text to the 4-hour schedule. Some module files still show the earlier 6-hour timings.
-- A consistency pass so names, paths, and commands in the guide match the code. Modules 04-08 were written before the code was finished.
-- The architecture diagram as an image, and PDF versions of the participant guide and facilitator guide.
-- Fixing the line numbers in `sample-app/.codemender/mock-findings.json`, which were written before the app code existed.
+`log-ingestion`, `sandbox`, `seed-data` and `agent` tests all pass offline. The unit tests used mocks and stubbed modules, because the build environment could not install all dependencies. Nothing here has run against a live Wiz tenant, GCP project, or GitHub org yet.
 
 **Needs a live environment to confirm**
 
-- Wiz remote MCP enablement steps and the Wiz GraphQL field names used by the new tools.
-- Gemini Enterprise custom MCP connector and OAuth setup.
-- Cloud Logging and GitHub remote MCP authentication from Gemini Enterprise.
+Wiz
+
+- Remote MCP enablement path (Settings > Tenant > AI Features), the toggle label, and which auth methods are supported.
+- All Wiz GraphQL fields used by the new tools. Each is marked "verify against your tenant's schema" in `mcp-server/services/wiz_service.py` and listed in `mcp-server/README.md`: `vulnerabilityFindings` filters and exposure fields, `graphSearch` privilege filters, and `cloudResources` image and repository fields.
+- How the agent authenticates to Wiz MCP: the header format, and exchanging the client ID and secret for a token.
+- Whether Wiz MCP can be added directly as a Gemini Enterprise custom MCP connector.
+
+Google Cloud / Gemini Enterprise
+
+- Cloud Logging remote MCP enablement command, and whether it needs an IAM role beyond `roles/logging.viewer`. Cloud Logging and GitHub remote MCP authentication from Gemini Enterprise.
+- Gemini Enterprise custom MCP connector and OAuth setup. UI paths and labels for the custom MCP connector, Data Insights agent, Agent Engine registration and Agent Designer, and whether native ADK confirmation shows as approve/reject in Gemini Enterprise.
+- Whether the connector needs scopes beyond `openid email profile`.
+- The API name `geminidataanalytics.googleapis.com` and the role `roles/geminidataanalytics.dataAgentUser`.
+- The Model Armor log name, sink filter and `jsonPayload` field names, and the exact sink table names in `security_logs`.
+- SCC BigQuery export: the Terraform resource type for provider v6, org-level permissions, whether the export writes into the pre-created table, and the export's real schema.
+- Whether the Agent Engine and Discovery Engine service agents exist before first use (if not, re-apply Terraform afterwards).
+
+First full runs
+
 - Terraform apply, Cloud Run deploys, and the sandbox job on gen2 with egress blocked.
-- GitHub Actions with Workload Identity Federation.
+- Whether callers that only run the job need `iam.serviceAccountUser` on `sandbox-runner-sa` (Terraform grants it to be safe).
+- `get_sandbox_result` lookup by `run_id`, which depends on Cloud Run returning env overrides on executions.
+- `gcloud run jobs execute --wait --format='value(metadata.name)'` returning the execution name.
+- The egress check (`sandbox/egress-check`) gives `POC_NOT_REPRODUCED` on the real job.
+- The image builds. The sandbox image bakes in Flask and pytest because there is no egress at runtime.
+
+GitHub
+
+- The GitHub MCP tool names used in docs and guardrails (`get_file_contents`, `create_pull_request`, `run_workflow`, `merge_pull_request`, ...) and the `X-MCP-Toolsets` / `X-MCP-Readonly` headers.
+- Fine-grained PAT scopes, SSO authorization, and that branch protection or rulesets block a merge by the agent's token.
+- GitHub Actions with Workload Identity Federation: end-to-end runs of `codemender-scan.yml` (mock mode) and `sandbox-validate.yml` (both `patch_path` and `branch` inputs).
+
+## Design notes
+
+- **No gVisor.** Cloud Run Jobs run only on the second-generation execution environment, so gVisor is not available. The sandbox relies on the gen2 microVM, an egress-denied VPC, and a service account with no project roles. If you need gVisor, use GKE Sandbox.
+- **Code reaches the sandbox through a storage bucket.** The sandbox has no egress, so it cannot clone from GitHub. Source tarballs and patches are staged in `gs://<project>-sandbox-inputs` and read through Private Google Access.
+- **Agent-written fixes go through a branch and a workflow.** The agent pushes its fix to a `security/...` branch and then dispatches `sandbox-validate.yml`. It asks for confirmation before each step. `start_sandbox_validation` is for patches that are already staged.
+- **CodeMender is a configurable endpoint.** Set `CODEMENDER_API_URL` and `CODEMENDER_API_TOKEN` to use a real endpoint. Without them, the scan runs in mock mode and emits the seed findings.
 
 ## Safety notes
 
