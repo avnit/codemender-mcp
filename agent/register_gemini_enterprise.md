@@ -4,7 +4,7 @@ Prerequisites:
 - The agent is deployed to Vertex AI Agent Engine (`python3 deploy.py`). Note the resource name printed at the end: `projects/PROJECT_NUMBER/locations/us-central1/reasoningEngines/ENGINE_ID`.
 - A Gemini Enterprise app exists (Days 1-3). Note its app ID (engine ID) from the app's URL or the Apps list.
 - You have `roles/discoveryengine.admin` on the project.
-- The Agent Engine service agent `service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com` has `roles/run.invoker` on `codemender-mcp-server` and `roles/logging.viewer` (done by Terraform).
+- The Agent Engine service agent `service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com` has `roles/run.invoker` on both `codemender-mcp-server` and `wiz-mcp-server`, plus `roles/logging.viewer` (done by Terraform).
 
 UI labels below change between releases. Treat every exact label as "confirm in your environment".
 

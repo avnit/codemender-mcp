@@ -801,7 +801,7 @@ class WizService:
         return self._run(_do)
 
     # ------------------------------------------------------------------
-    # Lab tools: code-to-cloud trace (Wiz part; BigQuery fallback lives in the server tool)
+    # Lab tools: code-to-cloud trace (Wiz graph lookup)
     # ------------------------------------------------------------------
 
     @staticmethod

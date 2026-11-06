@@ -8,12 +8,14 @@ locals {
 
   # Service, job and image names (NAMING.md)
   mcp_service_name       = "codemender-mcp-server"
+  wiz_mcp_service_name   = "wiz-mcp-server"
   ingestion_service_name = "security-log-ingestion"
   sandbox_job_name       = "codemender-sandbox"
 
-  mcp_server_image    = var.mcp_server_image != "" ? var.mcp_server_image : "${local.ar_prefix}/${local.mcp_service_name}:${var.image_tag}"
-  log_ingestion_image = var.log_ingestion_image != "" ? var.log_ingestion_image : "${local.ar_prefix}/${local.ingestion_service_name}:${var.image_tag}"
-  sandbox_image       = var.sandbox_image != "" ? var.sandbox_image : "${local.ar_prefix}/${local.sandbox_job_name}:${var.image_tag}"
+  mcp_server_image     = var.mcp_server_image != "" ? var.mcp_server_image : "${local.ar_prefix}/${local.mcp_service_name}:${var.image_tag}"
+  wiz_mcp_server_image = var.wiz_mcp_server_image != "" ? var.wiz_mcp_server_image : "${local.ar_prefix}/${local.wiz_mcp_service_name}:${var.image_tag}"
+  log_ingestion_image  = var.log_ingestion_image != "" ? var.log_ingestion_image : "${local.ar_prefix}/${local.ingestion_service_name}:${var.image_tag}"
+  sandbox_image        = var.sandbox_image != "" ? var.sandbox_image : "${local.ar_prefix}/${local.sandbox_job_name}:${var.image_tag}"
 
   # Buckets
   sandbox_bucket_name       = "${var.project_id}-sandbox-inputs"
@@ -58,4 +60,5 @@ locals {
   # Cloud Run URLs (null when deploy_services = false)
   ingestion_url = var.deploy_services ? google_cloud_run_v2_service.log_ingestion[0].uri : null
   mcp_url       = var.deploy_services ? google_cloud_run_v2_service.mcp_server[0].uri : null
+  wiz_mcp_url   = var.deploy_services ? google_cloud_run_v2_service.wiz_mcp_server[0].uri : null
 }

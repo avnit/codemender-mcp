@@ -23,14 +23,14 @@ agent/
 
 | Toggle | Server | URL env | Auth |
 |---|---|---|---|
-| `ENABLE_WIZ` | Wiz remote MCP | `WIZ_MCP_URL` (`https://mcp.app.wiz.io`) | `Authorization: Bearer` from `WIZ_MCP_TOKEN`, or client-credentials exchange with `WIZ_CLIENT_ID`/`WIZ_CLIENT_SECRET` against `https://auth.app.wiz.io/oauth/token`, audience `wiz-api`. Whether the Wiz MCP endpoint accepts this token: confirm in your environment. Enable MCP in Wiz under Settings > Tenant > AI Features (confirm in your environment). |
+| `ENABLE_WIZ` | Wiz MCP on Cloud Run (`wiz-mcp-server`) or Wiz vendor remote MCP | `WIZ_MCP_URL` (`https://wiz-mcp-server-XXXX.us-central1.run.app/mcp` or `https://mcp.app.wiz.io`) | For Cloud Run (`*.run.app`): Google ID token, audience = service base URL (`https://wiz-mcp-server-XXXX.us-central1.run.app`), via `google.oauth2.id_token.fetch_id_token` (`wiz-mcp-server` holds `wiz-client-secret` in Secret Manager). For `https://mcp.app.wiz.io`: `Authorization: Bearer` from `WIZ_MCP_TOKEN`, or client-credentials exchange with `WIZ_CLIENT_ID`/`WIZ_CLIENT_SECRET` against `https://auth.app.wiz.io/oauth/token`, audience `wiz-api`. |
 | `ENABLE_LOGGING` | Cloud Logging remote MCP | `CLOUD_LOGGING_MCP_URL` (`https://logging.googleapis.com/mcp`) | Google access token from `google.auth.default(scopes=[cloud-platform])`, refreshed when expired, sent through a header provider on each session. Adds `x-goog-user-project: $GOOGLE_CLOUD_PROJECT` (confirm in your environment). |
 | `ENABLE_GITHUB` | GitHub remote MCP | `GITHUB_MCP_URL` (`https://api.githubcopilot.com/mcp/`) | `Authorization: Bearer $GITHUB_PAT` (static header). Blocked tools are filtered out with `tool_filter`. |
-| `ENABLE_CODEMENDER` | Custom CodeMender MCP on Cloud Run | `CODEMENDER_MCP_URL` (`https://codemender-mcp-server-XXXX.us-central1.run.app/mcp`) | Google ID token, audience = service base URL (`https://codemender-mcp-server-XXXX.us-central1.run.app`), via `google.oauth2.id_token.fetch_id_token`. |
+| `ENABLE_CODEMENDER` | CodeMender MCP on Cloud Run (`codemender-mcp-server`) | `CODEMENDER_MCP_URL` (`https://codemender-mcp-server-XXXX.us-central1.run.app/mcp`) | Google ID token, audience = service base URL (`https://codemender-mcp-server-XXXX.us-central1.run.app`), via `google.oauth2.id_token.fetch_id_token`. |
 
 A toolset is skipped with a warning (agent still starts) when its toggle is false, its URL is missing, or its credentials are missing. Values still containing `REPLACE_ME`, `your-` or `XXXX` count as missing. Tokens are fetched lazily, so building the agent makes no network calls. Tokens are cached until 5 minutes before expiry so headers stay stable (ADK pools MCP sessions per header set).
 
-Local runs use your ADC (`gcloud auth application-default login`). An ID token for Cloud Run needs a service account or `gcloud auth application-default login --impersonate-service-account=...`; plain user ADC cannot mint ID tokens with a custom audience (confirm in your environment). On Agent Engine the service agent `service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com` is used; it needs `roles/run.invoker` on `codemender-mcp-server` and `roles/logging.viewer`.
+Local runs use your ADC (`gcloud auth application-default login`). An ID token for Cloud Run needs a service account or `gcloud auth application-default login --impersonate-service-account=...`; plain user ADC cannot mint ID tokens with a custom audience (confirm in your environment). On Agent Engine the service agent `service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com` is used; it needs `roles/run.invoker` on both `codemender-mcp-server` and `wiz-mcp-server`, plus `roles/logging.viewer`.
 
 ## Run locally
 
@@ -51,7 +51,7 @@ Try: "What did CodeMender find in payment-service?", "Who changed IAM in the las
 cd agent
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
-51 tests, no network, no model calls. They also run under pytest. Covered: tool policy and both confirmation modes, skill parsing (and loading with ADK's own skill loader), toolset skipping, header construction with mocked credentials, agent construction with all toolsets disabled, instruction content, deploy dry run.
+Unit tests run with no network and no model calls (they also run under pytest). Covered: tool policy and both confirmation modes, skill parsing (and loading with ADK's own skill loader), toolset skipping, header construction with mocked credentials (both Cloud Run ID tokens and Wiz OAuth), agent construction with all toolsets disabled, instruction content, deploy dry run.
 
 ## Deploy to Vertex AI Agent Engine
 
@@ -61,7 +61,7 @@ python3 deploy.py --dry-run     # prints project, location, bucket, requirements
 python3 deploy.py               # creates the reasoning engine
 python3 deploy.py --update projects/PROJECT_NUMBER/locations/us-central1/reasoningEngines/ID
 ```
-`deploy.py` uses `vertexai.init(...)`, `vertexai.agent_engines.AdkApp(agent=root_agent)` and `vertexai.agent_engines.create(...)`. `vertexai` is imported inside `main()`, so the module imports without it. `WIZ_CLIENT_SECRET` and `GITHUB_PAT` are passed as Secret Manager references (`wiz-client-secret`, `github-mcp-pat`), not plain values; the env-var secret format is "confirm in your environment".
+`deploy.py` uses `vertexai.init(...)`, `vertexai.agent_engines.AdkApp(agent=root_agent)` and `vertexai.agent_engines.create(...)`. `vertexai` is imported inside `main()`, so the module imports without it. `GITHUB_PAT` is passed as a Secret Manager reference (`github-mcp-pat`), never a plain value; when using external Wiz MCP (`https://mcp.app.wiz.io`) rather than the Cloud Run `wiz-mcp-server`, `WIZ_CLIENT_SECRET` is also passed as a Secret Manager reference (`wiz-client-secret`).
 
 Alternative: `adk deploy agent_engine --project=your-gcp-project-id --region=us-central1 --staging_bucket=gs://your-gcp-project-id-agent-staging security_agent` from agent/ (flags vary by ADK version: run `adk deploy agent_engine --help`).
 

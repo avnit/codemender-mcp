@@ -33,28 +33,6 @@ class Settings(BaseSettings):
         description="Log name filter or prefix for Code Mender logs."
     )
 
-    # Wiz Configuration (service account with read:issues scope)
-    wiz_client_id: Optional[str] = Field(
-        default=os.getenv("WIZ_CLIENT_ID"),
-        description="Wiz service account client ID."
-    )
-    wiz_client_secret: Optional[str] = Field(
-        default=os.getenv("WIZ_CLIENT_SECRET"),
-        description="Wiz service account client secret."
-    )
-    wiz_api_endpoint: Optional[str] = Field(
-        default=os.getenv("WIZ_API_ENDPOINT"),
-        description="Wiz GraphQL endpoint for your tenant, e.g. https://api.us17.app.wiz.io/graphql."
-    )
-    wiz_auth_url: str = Field(
-        default=os.getenv("WIZ_AUTH_URL", "https://auth.app.wiz.io/oauth/token"),
-        description="Wiz OAuth token URL."
-    )
-    wiz_audience: str = Field(
-        default=os.getenv("WIZ_AUDIENCE", "wiz-api"),
-        description="Wiz OAuth audience."
-    )
-
     # Region (used as the default region for the sandbox Cloud Run Job)
     region: str = Field(
         default=os.getenv("REGION", "us-central1"),
@@ -76,7 +54,7 @@ class Settings(BaseSettings):
     )
     code_to_cloud_table: str = Field(
         default=os.getenv("CODE_TO_CLOUD_TABLE", "code_to_cloud_map"),
-        description="Resource-to-repository mapping table (fallback for trace_code_to_cloud)."
+        description="Resource-to-repository mapping table for trace_code_to_cloud."
     )
 
     # Security Command Center continuous export
@@ -118,7 +96,11 @@ class Settings(BaseSettings):
     )
 
     # Server Configuration
-    host: str = Field(default="0.0.0.0", description="Host address to bind.")
+    # Bind to 0.0.0.0 on Cloud Run (K_SERVICE set) and 127.0.0.1 locally unless HOST is set.
+    host: str = Field(
+        default=os.getenv("HOST", "0.0.0.0" if os.getenv("K_SERVICE") else "127.0.0.1"),
+        description="Host address to bind."
+    )
     port: int = Field(
         default=int(os.getenv("PORT", "8080")),
         description="Port for Cloud Run (Cloud Run sets the PORT env var)."

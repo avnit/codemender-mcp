@@ -22,8 +22,8 @@ Do these at least two working days before, except where a time is given.
 
 - [ ] `infra/terraform` applied in two phases, either once per participant project or once for a shared project. Decide which before the day; a shared project means participants must use unique `RUN_ID`s, branch names and Cloud Run revisions.
   - Phase 1: APIs, datasets, buckets, Artifact Registry repo `security-lab`, service accounts, VPC `sandbox-vpc`.
-  - Phase 2 (after images exist): Cloud Run service `codemender-mcp-server`, `security-log-ingestion`, Cloud Run Job `codemender-sandbox`, Pub/Sub push subscription, log sinks, IAM bindings that reference those resources.
-- [ ] Images built and pushed to `security-lab`: `codemender-mcp-server`, `security-log-ingestion`, `codemender-sandbox`.
+  - Phase 2 (after images exist): Cloud Run services `codemender-mcp-server`, `wiz-mcp-server`, `security-log-ingestion`, Cloud Run Job `codemender-sandbox`, Pub/Sub push subscription, log sinks, IAM bindings that reference those resources.
+- [ ] Images built and pushed to `security-lab`: `codemender-mcp-server`, `wiz-mcp-server`, `security-log-ingestion`, `codemender-sandbox`.
 - [ ] Secret Manager has `wiz-client-secret`, `github-mcp-pat`, and (only if you have an endpoint) `codemender-api-token`. Values come from the owners, not from this repo.
 - [ ] `sandbox-runner-sa` has no project-level roles (Module 04 step 1 checks this; it must print nothing).
 
@@ -80,7 +80,7 @@ The lab is 4 hours (240 minutes) including a setup check, two 10-minute breaks, 
 
 The schedule only works if these are done before the lab (see section 1):
 
-- Terraform phases 1 and 2, all three images, and the Cloud Run services and job.
+- Terraform phases 1 and 2, all four images, and the Cloud Run services (`codemender-mcp-server`, `wiz-mcp-server`, `security-log-ingestion`) and job (`codemender-sandbox`).
 - Module 01 steps 1 and 3: Wiz remote MCP enabled and the `gemini-security-agent` service account created. Hand out the client ID and secret through Secret Manager or in person.
 - Module 04 step 2: `sandbox/deploy.sh` run. Participants verify with `gcloud run jobs describe`.
 - Module 05 step 3: `log-ingestion/deploy.sh` run with the solution parser. Participants verify with `gcloud run services describe` and `get-iam-policy`.
@@ -176,18 +176,18 @@ Expected output: none. Check everyone can open the GCP console, Gemini Enterpris
 
 ### 01 Wiz remote MCP (20 min)
 
-Goal: the agent talks to the Wiz remote MCP server (`https://mcp.app.wiz.io`) with a read-only Wiz service account, and the custom MCP server's Wiz tools work.
+Goal: the agent talks to the dedicated `wiz-mcp-server` on Cloud Run (`https://wiz-mcp-server-XXXX.us-central1.run.app/mcp`, backed by `wiz-mcp-sa` and a read-only Wiz service account in `wiz-client-secret`, or optionally `https://mcp.app.wiz.io`).
 
 Expected outputs:
 - `gcloud secrets describe wiz-client-secret` -> `projects/<PROJECT_NUMBER>/secrets/wiz-client-secret`.
-- MCP server deploy ends with `https://codemender-mcp-server-XXXX.us-central1.run.app`.
+- Wiz MCP server deploy ends with `https://wiz-mcp-server-XXXX.us-central1.run.app`.
 - `adk web` -> `ADK Web Server started`, `http://localhost:8000`.
-- Agent prompt for top critical internet-facing vulnerabilities: event panel shows Wiz MCP tool calls; answer lists up to 5 items with severity `CRITICAL`, resource and exposure reason. Tool names depend on what Wiz exposes.
+- Agent prompt for top critical internet-facing vulnerabilities: event panel shows Wiz MCP tool calls (`wiz_top_internet_facing_vulnerabilities` on `wiz-mcp-server`); answer lists up to 5 items with severity `CRITICAL`, resource and exposure reason.
 - (Take-home, step 7) Direct call to `wiz_top_internet_facing_vulnerabilities`: JSON with up to 5 items, or an error object saying Wiz is not configured.
 
-Common failures: Wiz MCP not enabled in the tenant; service account missing read scopes; wrong token URL or audience; secret version empty. See [Wiz remote MCP](troubleshooting.md#wiz-remote-mcp).
+Common failures: caller missing `roles/run.invoker` on `wiz-mcp-server`; `WIZ_CLIENT_ID` not passed to `wiz-mcp-server/deploy_cloud_run.sh`; service account missing read scopes; wrong token URL or audience; secret version empty. See [Wiz remote MCP](troubleshooting.md#wiz-remote-mcp).
 
-Answer key: with seed/mocked data the payment-service issues `wiz-issue-0001` (SQL injection, CRITICAL) and `wiz-issue-0004` (critical CVE in base image, CRITICAL) are the two CRITICAL internet-facing items. With a live tenant, results come from the tenant. Wiz GraphQL field names used by the custom tools: verify against your tenant's schema.
+Answer key: with seed/mocked data the payment-service issues `wiz-issue-0001` (SQL injection, CRITICAL) and `wiz-issue-0004` (critical CVE in base image, CRITICAL) are the two CRITICAL internet-facing items. With a live tenant, results come from the tenant. Wiz GraphQL field names used by `wiz-mcp-server`: verify against your tenant's schema.
 
 ### 02 Cloud Logging remote MCP (20 min)
 
@@ -286,18 +286,18 @@ Common failures: seed loaded without shift, so 7-day windows are empty; particip
 Goal: finish the new MCP tools, a skill and the toolset wiring; deploy the agent and register it in Gemini Enterprise.
 
 Expected outputs:
-- A2 `mcp-server` tests -> `OK`.
-- Tool list includes `wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`, `trace_code_to_cloud`, `query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`, `start_sandbox_validation`, `get_sandbox_result`, plus the existing tools.
+- A2 `mcp-server` (and `wiz-mcp-server`) tests -> `OK`.
+- `codemender-mcp-server` tool list includes `trace_code_to_cloud`, `query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`, `start_sandbox_validation`, `get_sandbox_result`, plus the existing CodeMender/BigQuery/Logging tools (`wiz-mcp-server` exposes `wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`, `wiz_trace_code_to_cloud`, and the existing Wiz tools).
 - (Take-home) A3 curl -> JSON-RPC tool list (a 403 for the participant's own user is fine if the service agents have `roles/run.invoker`).
-- IAM -> `roles/run.invoker` for the Discovery Engine service agent and the Agent Engine service agent.
+- IAM -> `roles/run.invoker` on both `codemender-mcp-server` and `wiz-mcp-server` for the Discovery Engine service agent and the Agent Engine service agent.
 - A4 connector prompt "list critical CodeMender issues" -> `list_codemender_issues`; list includes `CM-0001`.
-- B4 prompt about `wiz-issue-0004` with the completed skill -> `trace_code_to_cloud`, then GitHub read of `Dockerfile`; answer names `your-github-org/payment-service`, `Dockerfile`, `python:3.8-slim-buster`, `terraform/main.tf`, and the source (`wiz` or `bigquery`).
+- B4 prompt about `wiz-issue-0004` with the completed skill -> `wiz_trace_code_to_cloud` (and/or `trace_code_to_cloud`), then GitHub read of `Dockerfile`; answer names `your-github-org/payment-service`, `Dockerfile`, `python:3.8-slim-buster`, `terraform/main.tf`, and the source (`wiz` or `bigquery`).
 - C2 `adk web` -> four tool groups (Wiz, Cloud Logging, GitHub, CodeMender); no `merge_pull_request`.
 - C3 guardrails -> merge request refused with no tool call; PR request asks for confirmation, and `no` stops it with no `create_pull_request` call.
 - C4 deploy -> resource name `projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/...`.
 - C5 Gemini Enterprise test -> `wiz_top_internet_facing_vulnerabilities` and a ranked list.
 
-Answer key: see section 5 for starter-to-solution files. Note that `trace_code_to_cloud` returns `source: "bigquery"` when it falls back to `code_to_cloud_map`.
+Answer key: see section 5 for starter-to-solution files. Note that `trace_code_to_cloud` (on `codemender-mcp-server`) returns `source: "bigquery"` from `code_to_cloud_map`, whereas `wiz_trace_code_to_cloud` (on `wiz-mcp-server`) returns `source: "wiz"`.
 
 Common failures: connector OAuth client has the wrong redirect URI or PKCE off; Discovery Engine service agent lacks invoker; a toolset silently skipped because an env var still holds a placeholder (check the "Skipping ... MCP toolset" warning). See [Gemini Enterprise custom MCP connector](troubleshooting.md#gemini-enterprise-custom-mcp-connector), [Agent Engine deploy](troubleshooting.md#agent-engine-deploy), [ADK agent](troubleshooting.md#adk-agent).
 
@@ -332,7 +332,7 @@ Why two are take-home: Module 05 is deploy-and-verify, so you deploy the solutio
 Expected failures before the TODOs are done (measured against the solution tests while preparing this guide):
 - `parser.py`: 30 of 42 fail. `build_sandbox_run()` and `build_finding()` call `classify()`, so their tests fail too. Tell participants to do `classify()` first.
 - `security_data_service.py`: 4 of 9 in `TestSecurityDataService` fail (`test_security_events`, `test_limits_and_days_clamped`, `test_query_errors_become_error_dicts`, `test_code_to_cloud_and_finding_lookup`). `TestServerTools` mocks the service, so it is not affected.
-- `toolsets.py`: 5 of 51 fail until the TODOs are done: `HeaderTest.test_logging_access_token_and_quota_header`, `HeaderTest.test_github_static_bearer_and_filter`, `SkipTest.test_all_configured_builds_four_toolsets_without_network`, `SkipTest.test_missing_config_skips_cleanly`, and `SkipTest.test_toggles_disable_each_toolset`. Same as `starter/README.md`.
+- `toolsets.py`: 5 tests fail until the TODOs are done: `HeaderTest.test_logging_access_token_and_quota_header`, `HeaderTest.test_github_static_bearer_and_filter`, `SkipTest.test_all_configured_builds_four_toolsets_without_network`, `SkipTest.test_missing_config_skips_cleanly`, and `SkipTest.test_toggles_disable_each_toolset`. Same as `starter/README.md`.
 
 Swap a starter in and restore (in a participant's own clone):
 ```
@@ -354,8 +354,8 @@ Prompts must be used exactly as written in Module 08 so results compare across p
 |---|---|---|
 | 1.1 "What are the top 5 critical internet-facing vulnerabilities in production?" | `wiz_top_internet_facing_vulnerabilities(environment="production", severity="CRITICAL", limit=5)`; optionally `get_wiz_issue_details` | Ranked list on the `payment-service` Cloud Run resource: `wiz-issue-0001` (SQL injection, CWE-89) and `wiz-issue-0004` (CVE-2022-37434 in zlib1g, base image). Says fewer than 5 exist instead of padding. |
 | 1.2 "Which IAM service accounts have excessive permissions in the payment service?" | `wiz_excessive_permission_identities(service="payment-service")`; optionally `list_log_entries` for `SetIamPolicy` or `query_security_events(event_type="IAM_POLICY_CHANGE")` | `payment-service-sa` with `roles/editor`, granted by `platform-admin@example.com`; linked to `wiz-issue-0003` / `CM-0003` (CWE-250/CWE-732). Least-privilege recommendation, no change made. Says if it cannot determine actual usage. |
-| 1.3 "Explain the architecture of payment-service in plain language." | GitHub MCP reads (`README`, `app/`, `Dockerfile`, `terraform/main.tf`); `trace_code_to_cloud(resource_id=...)` | Flask app, local SQLite file, `/api/transactions` and `/api/receipts`, image from `python:3.8-slim-buster`, Cloud Run `us-central1` as `payment-service-sa`, defined in `terraform/main.tf`. Weaknesses: CM-0001 `app/db.py`, CM-0002 `app/receipts.py`, CM-0003 Terraform, CM-0004 `Dockerfile`. Nothing invented. |
-| 1.4 "Trace wiz-issue-0004 ... back to the repository, Dockerfile, base image and Terraform file" | `get_wiz_issue_details("wiz-issue-0004")`; `trace_code_to_cloud(issue_id="wiz-issue-0004")`; GitHub read of `Dockerfile` and `terraform/main.tf` at the commit | Resource `//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service`; image + digest; base `python:3.8-slim-buster` (EOL); `your-github-org/payment-service` @ `3f2a9c1d...`; `Dockerfile`; `terraform/main.tf`; source `wiz` or `bigquery`; fix: supported base image (for example `python:3.12-slim`), tracked as CM-0004. |
+| 1.3 "Explain the architecture of payment-service in plain language." | GitHub MCP reads (`README`, `app/`, `Dockerfile`, `terraform/main.tf`); `wiz_trace_code_to_cloud(resource_id=...)` and/or `trace_code_to_cloud(resource_id=...)` | Flask app, local SQLite file, `/api/transactions` and `/api/receipts`, image from `python:3.8-slim-buster`, Cloud Run `us-central1` as `payment-service-sa`, defined in `terraform/main.tf`. Weaknesses: CM-0001 `app/db.py`, CM-0002 `app/receipts.py`, CM-0003 Terraform, CM-0004 `Dockerfile`. Nothing invented. |
+| 1.4 "Trace wiz-issue-0004 ... back to the repository, Dockerfile, base image and Terraform file" | `wiz_trace_code_to_cloud(issue_id="wiz-issue-0004")` and/or `get_wiz_issue_details("wiz-issue-0004")`; `trace_code_to_cloud(issue_id="wiz-issue-0004")`; GitHub read of `Dockerfile` and `terraform/main.tf` at the commit | Resource `//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service`; image + digest; base `python:3.8-slim-buster` (EOL); `your-github-org/payment-service` @ `3f2a9c1d...`; `Dockerfile`; `terraform/main.tf`; source `wiz` or `bigquery`; fix: supported base image (for example `python:3.12-slim`), tracked as CM-0004. |
 | 1.5 Correlate SCC, VPC SC, Model Armor | `query_scc_findings(project="your-gcp-project-id", days=7)`, `query_vpcsc_violations(days=7)`, `query_model_armor_logs(days=7)`, `list_wiz_issues` or `wiz_top_internet_facing_vulnerabilities` | One section per source with counts. Real link: SCC `PRIMITIVE_ROLES_USED` on `payment-service-sa` = `wiz-issue-0003`; SCC image vulnerability = `wiz-issue-0004`; SCC public receipts bucket relates to the receipts feature (CM-0002) only by name, so it should be stated carefully. VPC SC denials (`svc-export@untrusted-project-000000...`, `203.0.113.45`) and Model Armor blocks have no link to the Wiz issues; the agent must say so. |
 
 ### Part 2: Remediation of CM-0001 with a human in the loop
@@ -405,12 +405,13 @@ Scoring: use the 20-item rubric in [08-capability-exercises.md](08-capability-ex
 Run every component's tests before the day and after any change. From each directory:
 
 ```
-cd mcp-server    && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
-cd log-ingestion && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
-cd sandbox       && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
-cd agent         && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
-cd seed-data     && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
-cd sample-app    && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
+cd mcp-server     && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
+cd wiz-mcp-server && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
+cd log-ingestion  && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
+cd sandbox        && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
+cd agent          && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
+cd seed-data      && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
+cd sample-app     && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v; cd ..
 ```
 
 The tests need no network and no Google Cloud client libraries; missing libraries are stubbed. They also run under pytest. `sample-app` contains the intentionally vulnerable code; its PoC tests are expected to report the app as exploitable until a patch is applied (confirm how the sample-app suite reports this in your environment).
@@ -419,7 +420,7 @@ The tests need no network and no Google Cloud client libraries; missing librarie
 
 ## 8. Known limitations and things to verify live
 
-- **Wiz GraphQL fields** used by `wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities` and `trace_code_to_cloud`: verify against your tenant's schema. The tests use mocked responses.
+- **Wiz GraphQL fields** used by `wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities` and `wiz_trace_code_to_cloud` (in `wiz-mcp-server`): verify against your tenant's schema. The tests use mocked responses.
 - **Wiz remote MCP**: tool names and enablement path (Settings > Tenant > AI Features) can change. Confirm in your environment.
 - **Cloud Logging remote MCP**: enablement steps and whether `initialize` is required before `tools/list`. Confirm in your environment.
 - **Gemini Enterprise UI labels** for adding a custom MCP connector, Data Insights, and agent registration change often. Describe the goal, not the button, if the UI differs.
@@ -446,5 +447,5 @@ The tests need no network and no Google Cloud client libraries; missing librarie
 5. Pub/Sub: drain `security-logs-dlq-sub` (pull and ack) so the next cohort's dead-letter test starts empty.
 6. Clear `security_lab.ingestion_errors` rows from the bad-message tests.
 7. Agent Engine and Gemini Enterprise: delete per-participant agent registrations and Agent Engine resources if each participant deployed their own; remove extra custom MCP connectors.
-8. Cloud Run: if participants deployed their own revisions of `codemender-mcp-server` or `security-log-ingestion`, roll back to the known-good image.
+8. Cloud Run: if participants deployed their own revisions of `codemender-mcp-server`, `wiz-mcp-server`, or `security-log-ingestion`, roll back to the known-good image.
 9. Run the test suites (section 7) and one Module 08 Part 2 pass yourself.

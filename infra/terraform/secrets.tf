@@ -5,7 +5,7 @@
 #   printf '%s' 'ghp_REPLACE_ME' | gcloud secrets versions add github-mcp-pat --data-file=-
 #   printf '%s' 'REPLACE_ME' | gcloud secrets versions add codemender-api-token --data-file=-
 #
-# codemender-mcp-server reads wiz-client-secret at deploy time (version
+# wiz-mcp-server reads wiz-client-secret at deploy time (version
 # "latest"), so add that version before phase 2 (deploy_services = true).
 
 resource "google_secret_manager_secret" "wiz_client_secret" {
@@ -41,12 +41,12 @@ resource "google_secret_manager_secret" "codemender_api_token" {
   depends_on = [google_project_service.apis]
 }
 
-# codemender-mcp-sa reads the Wiz client secret.
-resource "google_secret_manager_secret_iam_member" "wiz_secret_mcp_sa" {
+# wiz-mcp-sa (and ONLY wiz-mcp-sa) reads the Wiz client secret.
+resource "google_secret_manager_secret_iam_member" "wiz_secret_wiz_mcp_sa" {
   project   = var.project_id
   secret_id = google_secret_manager_secret.wiz_client_secret.secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.codemender_mcp.email}"
+  member    = "serviceAccount:${google_service_account.wiz_mcp.email}"
 }
 
 # The Agent Engine service agent reads the GitHub PAT for the GitHub remote MCP.

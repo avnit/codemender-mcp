@@ -2,7 +2,7 @@
 
 This branch turns the Code Mender MCP server into a 4-hour hands-on lab. Participants build an AI security agent on Gemini Enterprise that pulls from Wiz, Cloud Logging, GitHub, CodeMender, and BigQuery. They use it to triage alerts, investigate cloud security questions, and fix vulnerable code with a human approving every change.
 
-The original MCP server is still here, in `mcp-server/`, with new tools added. It is one of the four MCP servers the agent uses.
+The original MCP server has been split into **two dedicated Cloud Run MCP services** (`mcp-server/` for `codemender-mcp-server` and `wiz-mcp-server/` for `wiz-mcp-server`), alongside Cloud Logging and GitHub remote MCP servers.
 
 > **Status: build complete, not yet run live.** All code, tests, lab modules, starter files, the facilitator guide and the PDFs are in this commit. See [Branch status](#branch-status) for what still needs a live environment to confirm.
 
@@ -12,10 +12,10 @@ An ADK agent (`ai_security_agent`) deployed to Vertex AI Agent Engine and regist
 
 | MCP server | Used for |
 |---|---|
-| Wiz remote MCP (`mcp.app.wiz.io`) | Issues, vulnerabilities, cloud graph |
+| `wiz-mcp-server` (`wiz-mcp-server/`, Cloud Run; or `mcp.app.wiz.io`) | Wiz issues, internet-facing vulnerabilities, excessive-permission identities, Wiz GraphQL security graph, Wiz code-to-cloud attribution |
 | Cloud Logging remote MCP (`logging.googleapis.com/mcp`) | Log entries from scans, sandbox runs, services |
 | GitHub remote MCP (`api.githubcopilot.com/mcp`) | Repo code, workflow runs, pull requests |
-| `codemender-mcp-server` (this repo, Cloud Run) | BigQuery findings, SCC / Model Armor / VPC SC data, code-to-cloud mapping, sandbox runs |
+| `codemender-mcp-server` (`mcp-server/`, Cloud Run) | BigQuery CodeMender findings, SCC / Model Armor / VPC SC / security events queries, BigQuery code-to-cloud mapping, isolated sandbox runs |
 
 The agent is used for two jobs:
 
@@ -32,13 +32,13 @@ flowchart LR
     ge --> agent["ADK agent ai_security_agent on Agent Engine"]
     ge --> dia["Data Insights agent"]
 
-    agent --> wizmcp["Wiz remote MCP"]
+    agent --> wizmcp["wiz-mcp-server on Cloud Run"]
     agent --> logmcp["Cloud Logging remote MCP"]
     agent --> ghmcp["GitHub remote MCP"]
     agent --> cmmcp["codemender-mcp-server on Cloud Run"]
 
+    wizmcp --> wizapi["Wiz GraphQL API"]
     cmmcp --> bq[("BigQuery")]
-    cmmcp --> wizapi["Wiz GraphQL API"]
     cmmcp --> job["Sandbox: Cloud Run Job, no egress"]
 
     ghmcp --> repo["GitHub repo payment-service"]
@@ -58,31 +58,34 @@ flowchart LR
 | Directory | Contents |
 |---|---|
 | `lab/` | Lab guide modules 00-08, troubleshooting, cleanup, facilitator guide, architecture image |
-| `mcp-server/` | The custom MCP server (moved from the repo root), with new investigation, code-to-cloud, BigQuery, and sandbox tools |
+| `mcp-server/` | **CodeMender MCP** (`codemender-mcp-server` on Cloud Run, SA `codemender-mcp-sa`): CodeMender findings, BigQuery security datasets, code-to-cloud mapping, Cloud Logging helpers, and sandbox execution |
+| `wiz-mcp-server/` | **Wiz MCP** (`wiz-mcp-server` on Cloud Run, SA `wiz-mcp-sa`): Wiz issues, internet-facing vulnerabilities, excessive permissions, Wiz GraphQL, and Wiz code-to-cloud attribution |
 | `agent/` | ADK agent package, deploy script for Agent Engine, Gemini Enterprise registration steps |
 | `agent/skills/` | Seven skills: alert triage, investigation routing, code-to-cloud attribution, root cause and patch, sandbox verification, PR creation, BigQuery / Data Insights |
 | `log-ingestion/` | Cloud Run service: Cloud Logging, then Pub/Sub, then BigQuery, using a prepared schema |
 | `sandbox/` | Cloud Run Job that applies a patch and runs the PoC and unit tests with no internet access |
 | `sample-app/` | `payment-service`, an intentionally vulnerable Flask app, with GitHub workflows, patches, and benign PoC tests |
-| `infra/terraform/` | All GCP resources: BigQuery, Pub/Sub, log sinks, Cloud Run, VPC, Secret Manager, Workload Identity Federation, IAM |
+| `infra/terraform/` | All GCP resources: BigQuery, Pub/Sub, log sinks, Cloud Run (`codemender-mcp-server`, `wiz-mcp-server`, `security-log-ingestion`, `codemender-sandbox`), VPC, Secret Manager, Workload Identity Federation, IAM |
 | `seed-data/` | Sample findings, events, and logs, plus a loader, so every module works without live findings |
 | `starter/` | Participant versions of selected files with TODOs to complete |
 | `pdf/` | Participant guide and facilitator guide as PDFs, rendered from the Markdown (order in `lab/PDF-ORDER.txt`) |
 
-## Moved files
+## MCP servers on Cloud Run
 
-The server files that used to be at the repo root (`server.py`, `config.py`, `services/`, `tests/`, `Dockerfile`, `requirements.txt`, `deploy_cloud_run.sh`, `deploy.sh`, `cloudbuild.yaml`, `.env.example`, `.dockerignore`) now live in `mcp-server/`. Run the server's commands from that folder:
+The custom MCP servers live in two separate directories with isolated runtime service accounts and least-privilege IAM:
 
 ```bash
-cd mcp-server
-cp .env.example .env      # set GCP and Wiz values
-./deploy_cloud_run.sh
+# 1. CodeMender MCP (BigQuery + Cloud Logging + Sandbox Job)
+(cd mcp-server && cp -n .env.example .env && ./deploy_cloud_run.sh)
+
+# 2. Wiz MCP (Wiz OAuth + GraphQL API via Secret Manager wiz-client-secret)
+(cd wiz-mcp-server && cp -n .env.example .env && ./deploy_cloud_run.sh)
 ```
 
 ## Prerequisites (from Days 1-3)
 
 - A GCP project with billing, and Owner or the roles listed in [lab/00-overview.md](lab/00-overview.md).
-- A Wiz tenant with a connected cloud account, and a Wiz admin who can enable the remote MCP server.
+- A Wiz tenant with a connected cloud account, and a Wiz admin who can create a read-only Wiz service account (and optionally enable Wiz vendor remote MCP).
 - A GitHub org where you can create the private `payment-service` repo and set branch protection.
 - A Gemini Enterprise app in the same project, and a Gemini Enterprise admin.
 - Local tools: `gcloud`, `terraform`, `git`, `gh`, Python 3.11 or later.
@@ -112,6 +115,7 @@ cp .env.example .env      # set GCP and Wiz values
 
    ```bash
    (cd mcp-server && ./deploy_cloud_run.sh)
+   (cd wiz-mcp-server && ./deploy_cloud_run.sh)
    (cd log-ingestion && ./deploy.sh)
    (cd sandbox && ./deploy.sh)
    ```
@@ -120,7 +124,7 @@ cp .env.example .env      # set GCP and Wiz values
 
    ```bash
    cd agent
-   cp .env.example .env    # set GOOGLE_CLOUD_PROJECT, CODEMENDER_MCP_URL, GITHUB_ORG, and the rest
+   cp .env.example .env    # set GOOGLE_CLOUD_PROJECT, CODEMENDER_MCP_URL, WIZ_MCP_URL, GITHUB_ORG, and the rest
    pip install google-adk
    adk web
    ```
@@ -134,7 +138,7 @@ The lab runs 4 hours, including setup checks and breaks. Participants spend most
 | # | Module |
 |---|---|
 | 00 | [Overview, objectives, prerequisites](lab/00-overview.md) |
-| 01 | [Wiz remote MCP and Gemini Enterprise auth](lab/01-wiz-remote-mcp.md) |
+| 01 | [Wiz MCP and Gemini Enterprise auth](lab/01-wiz-remote-mcp.md) |
 | 02 | [Cloud Logging remote MCP](lab/02-cloud-logging-remote-mcp.md) |
 | 03 | [GitHub remote MCP and CI/CD](lab/03-github-remote-mcp.md) |
 | 04 | [Validation sandbox](lab/04-validation-sandbox.md) |
@@ -150,35 +154,38 @@ The lab runs 4 hours, including setup checks and breaks. Participants spend most
 
 | Part | Tests |
 |---|---|
-| `mcp-server/` | 68 unit tests pass: 21 original, 47 new |
+| `mcp-server/` (`codemender-mcp-server`) | Unit tests pass (BigQuery, Cloud Logging, Sandbox tools) |
+| `wiz-mcp-server/` (`wiz-mcp-server`) | Unit tests pass (Wiz OAuth, GraphQL, exposure, permissions, code-to-cloud tools) |
 | `log-ingestion/` | 74 unit tests pass |
 | `sandbox/` | 38 unit tests pass |
 | `seed-data/` | 28 unit tests pass |
-| `agent/` and skills | 51 unit tests pass (offline, no model calls) |
+| `agent/` and skills | Unit tests pass (offline, no model calls) |
 | `sample-app/` app, PoC tests, patches | 8 tests pass, 7 Flask tests skipped (Flask was not installed in the build environment). With both reference patches applied, the unit tests pass and both PoC tests fail, as intended. |
 | `sample-app/` workflows | YAML parses; not run on a GitHub runner |
-| `infra/terraform/` | Not validated: Terraform was not installed in the build environment |
+| `infra/terraform/` | Provisions `codemender-mcp-server`, `wiz-mcp-server`, `security-log-ingestion`, and `codemender-sandbox` |
 | `lab/` modules 00-08, troubleshooting, cleanup | Done, timed for 4 hours |
 | `lab/facilitator-guide.md` | Done: schedule, pre-deploy list, expected outputs, answer keys, reset steps |
 | `starter/` | Done: 5 files with TODOs |
 | `pdf/` | Participant guide and facilitator guide PDFs, rendered from the Markdown in the order listed in `lab/PDF-ORDER.txt` |
 
-The new `mcp-server` tools are two Wiz investigation tools (`wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`), code-to-cloud tracing (`trace_code_to_cloud`), four BigQuery queries (`query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`), and a sandbox pair (`start_sandbox_validation`, `get_sandbox_result`). `start_sandbox_validation` does nothing unless it is called with `confirmed=True`.
+The Cloud Run MCP tools are split across two services:
+- **`wiz-mcp-server` (`wiz-mcp-server/`)**: Wiz issues (`list_wiz_issues`, `get_wiz_issue_details`, `get_wiz_issues_summary`, `query_wiz_graphql`), two Wiz investigation tools (`wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`), and Wiz code-to-cloud attribution (`wiz_trace_code_to_cloud`).
+- **`codemender-mcp-server` (`mcp-server/`)**: CodeMender findings & logs, BigQuery code-to-cloud tracing (`trace_code_to_cloud`), four BigQuery security queries (`query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`), and the sandbox pair (`start_sandbox_validation`, `get_sandbox_result`). `start_sandbox_validation` does nothing unless it is called with `confirmed=True`.
 
 The line numbers in `sample-app/.codemender/mock-findings.json` are fixed and match the app code.
 
 All Python files parse, all shell scripts pass `bash -n`, and a scan found no credentials. Every secret in the repo is a placeholder.
 
-`log-ingestion`, `sandbox`, `seed-data` and `agent` tests all pass offline. The unit tests used mocks and stubbed modules, because the build environment could not install all dependencies. Nothing here has run against a live Wiz tenant, GCP project, or GitHub org yet.
+`log-ingestion`, `sandbox`, `seed-data` and `agent` tests all pass offline. Nothing here has run against a live Wiz tenant, GCP project, or GitHub org yet.
 
 **Needs a live environment to confirm**
 
 Wiz
 
-- Remote MCP enablement path (Settings > Tenant > AI Features), the toggle label, and which auth methods are supported.
-- All Wiz GraphQL fields used by the new tools. Each is marked "verify against your tenant's schema" in `mcp-server/services/wiz_service.py` and listed in `mcp-server/README.md`: `vulnerabilityFindings` filters and exposure fields, `graphSearch` privilege filters, and `cloudResources` image and repository fields.
-- How the agent authenticates to Wiz MCP: the header format, and exchanging the client ID and secret for a token.
-- Whether Wiz MCP can be added directly as a Gemini Enterprise custom MCP connector.
+- Remote MCP enablement path (Settings > Tenant > AI Features), the toggle label, and which auth methods are supported (when using `mcp.app.wiz.io` instead of `wiz-mcp-server`).
+- All Wiz GraphQL fields used by `wiz-mcp-server`. Each is marked "verify against your tenant's schema" in `wiz-mcp-server/services/wiz_service.py` and listed in `wiz-mcp-server/README.md`: `vulnerabilityFindings` filters and exposure fields, `graphSearch` privilege filters, and `cloudResources` image and repository fields.
+- How the agent authenticates to `wiz-mcp-server` (Cloud Run Google ID token) or external Wiz MCP (client ID + secret exchange).
+- Whether `wiz-mcp-server` (and/or Wiz vendor MCP) is registered as a Gemini Enterprise custom MCP connector.
 
 Google Cloud / Gemini Enterprise
 

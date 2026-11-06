@@ -72,8 +72,26 @@ class DeployDryRunTest(unittest.TestCase):
     dumped = json.dumps(cfg)
     self.assertNotIn("secret-pat", dumped)
     self.assertEqual(cfg["env_vars"]["GITHUB_PAT"], {"secret": "github-mcp-pat", "version": "latest"})
+    self.assertEqual(cfg["env_vars"]["WIZ_CLIENT_SECRET"], {"secret": "wiz-client-secret", "version": "latest"})
     self.assertEqual(cfg["env_vars"]["AGENT_MODEL"], "m")
     self.assertIn("security_agent", cfg["extra_packages"])
+
+  def test_cloud_run_wiz_mcp_omits_wiz_client_secret(self):
+    import deploy
+    cfg = deploy.build_config({
+        "GOOGLE_CLOUD_PROJECT": "p",
+        "WIZ_MCP_URL": "https://wiz-mcp-server-abc123.us-central1.run.app/mcp",
+        "CODEMENDER_MCP_URL": "https://codemender-mcp-server-abc123.us-central1.run.app/mcp",
+    })
+    self.assertNotIn("WIZ_CLIENT_SECRET", cfg["env_vars"])
+    self.assertEqual(
+        cfg["env_vars"]["WIZ_MCP_URL"],
+        "https://wiz-mcp-server-abc123.us-central1.run.app/mcp",
+    )
+    self.assertEqual(
+        cfg["env_vars"]["CODEMENDER_MCP_URL"],
+        "https://codemender-mcp-server-abc123.us-central1.run.app/mcp",
+    )
 
   def test_dry_run_prints_and_does_not_import_vertexai(self):
     import contextlib

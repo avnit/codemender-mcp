@@ -1,0 +1,45 @@
+steps:
+  # 1. Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA'
+      - '-t'
+      - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:latest'
+      - '.'
+
+  # 2. Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}'
+
+  # 3. Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE}'
+      - '--image=${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA'
+      - '--region=${_LOCATION}'
+      - '--platform=managed'
+      - '--service-account=${_SERVICE_ACCOUNT}@$PROJECT_ID.iam.gserviceaccount.com'
+      # --update-env-vars merges with existing Wiz tenant env vars and Secret Manager mounts
+      - '--update-env-vars=GCP_PROJECT_ID=$PROJECT_ID,REGION=${_LOCATION},SERVICE_NAME=${_SERVICE}'
+      - '--port=8080'
+
+substitutions:
+  _LOCATION: 'us-central1'
+  _REPOSITORY: 'security-lab'
+  _SERVICE: 'wiz-mcp-server'
+  _SERVICE_ACCOUNT: 'wiz-mcp-sa'
+
+images:
+  - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA'
+  - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

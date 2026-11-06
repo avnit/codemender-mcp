@@ -2,9 +2,9 @@
 
 Terraform for the lab "Build an AI Security Agent on Gemini Enterprise integrated with Wiz, Cloud Logging, GitHub, CodeMender, and BigQuery".
 
-It creates the GCP side of the lab in one existing project: Artifact Registry, BigQuery datasets and tables, log sinks, Pub/Sub, the sandbox network, buckets, Secret Manager secrets (empty), service accounts, IAM, Workload Identity Federation for GitHub Actions, two Cloud Run services, the sandbox Cloud Run Job, and (optionally) the SCC export to BigQuery.
+It creates the GCP side of the lab in one existing project: Artifact Registry, BigQuery datasets and tables, log sinks, Pub/Sub, the sandbox network, buckets, Secret Manager secrets (empty), service accounts, IAM, Workload Identity Federation for GitHub Actions, three Cloud Run services (`codemender-mcp-server`, `wiz-mcp-server`, and `security-log-ingestion`), the sandbox Cloud Run Job, and (optionally) the SCC export to BigQuery.
 
-`terraform fmt` and `terraform validate` have not been run on this code. Run them before the first apply.
+`terraform fmt` and `terraform validate` should be run before the first apply.
 
 ## Requirements
 
@@ -35,15 +35,16 @@ Between phases:
    printf '%s' 'REPLACE_ME'     | gcloud secrets versions add codemender-api-token --data-file=-
    ```
 
-   `wiz-client-secret` must have a version before phase 2, because the MCP server reads version `latest` at deploy time. If you are not using Wiz, add a placeholder value.
+   `wiz-client-secret` must have a version before phase 2, because `wiz-mcp-server` reads version `latest` at deploy time. If you are not using Wiz, add a placeholder value.
 
-2. Build and push the three images to `REGION-docker.pkg.dev/PROJECT/security-lab/`:
+2. Build and push the four images to `REGION-docker.pkg.dev/PROJECT/security-lab/`:
 
    ```bash
    REPO=$(terraform output -raw artifact_registry_prefix)
-   gcloud builds submit ../../mcp-server    --tag "$REPO/codemender-mcp-server:latest"
-   gcloud builds submit ../../log-ingestion --tag "$REPO/security-log-ingestion:latest"
-   gcloud builds submit ../../sandbox       --tag "$REPO/codemender-sandbox:latest"
+   gcloud builds submit ../../mcp-server     --tag "$REPO/codemender-mcp-server:latest"
+   gcloud builds submit ../../wiz-mcp-server --tag "$REPO/wiz-mcp-server:latest"
+   gcloud builds submit ../../log-ingestion  --tag "$REPO/security-log-ingestion:latest"
+   gcloud builds submit ../../sandbox        --tag "$REPO/codemender-sandbox:latest"
    ```
 
 Phase 2: services, job, push subscription and the IAM that references them.
@@ -52,7 +53,7 @@ Phase 2: services, job, push subscription and the IAM that references them.
 terraform apply -var deploy_services=true
 ```
 
-Then copy `terraform output github_actions_vars` into the payment-service repository variables, and use `terraform output -raw mcp_endpoint` as `CODEMENDER_MCP_URL`.
+Then copy `terraform output github_actions_vars` into the payment-service repository variables, use `terraform output -raw mcp_endpoint` as `CODEMENDER_MCP_URL`, and use `terraform output -raw wiz_mcp_endpoint` as `WIZ_MCP_URL`.
 
 ## What each file creates
 
@@ -68,17 +69,17 @@ Then copy `terraform output github_actions_vars` into the payment-service reposi
 | `pubsub.tf` | Topics `security-logs`, `security-logs-dlq`; push sub `security-logs-push` (OIDC as `pubsub-push-sa`, 5 delivery attempts, then DLQ); pull sub `security-logs-dlq-sub`; Pub/Sub service agent IAM. |
 | `network.tf` | `sandbox-vpc`, `sandbox-subnet` (10.10.0.0/24, Private Google Access), firewall rules `sandbox-deny-all-egress` and `sandbox-allow-restricted-apis`, private DNS zone mapping `*.googleapis.com` to `restricted.googleapis.com` (199.36.153.4-7). No Cloud NAT, on purpose. |
 | `storage.tf` | `PROJECT-sandbox-inputs` (7-day lifecycle delete, no versioning, public access prevention) and `PROJECT-agent-staging`. |
-| `secrets.tf` | Secrets `wiz-client-secret`, `github-mcp-pat`, `codemender-api-token` with no versions; accessor bindings. |
-| `service_accounts.tf` | `codemender-mcp-sa`, `log-ingestion-sa`, `sandbox-runner-sa`, `pubsub-push-sa`, `github-actions-sa`. |
-| `iam.tf` | Role bindings for participants, the lab service accounts and the Discovery Engine / Agent Engine service agents. |
+| `secrets.tf` | Secrets `wiz-client-secret`, `github-mcp-pat`, `codemender-api-token` with no versions; `wiz-client-secret` accessor bound exclusively to `wiz-mcp-sa`. |
+| `service_accounts.tf` | `codemender-mcp-sa`, `wiz-mcp-sa`, `log-ingestion-sa`, `sandbox-runner-sa`, `pubsub-push-sa`, `github-actions-sa`. |
+| `iam.tf` | Role bindings for participants, the lab service accounts and the Discovery Engine / Agent Engine service agents (invoker on both `codemender-mcp-server` and `wiz-mcp-server`). |
 | `wif.tf` | Pool `github-pool`, provider `github-provider`, `workloadIdentityUser` for `GITHUB_ORG/payment-service` on `github-actions-sa`. |
-| `cloud_run.tf` | Services `codemender-mcp-server`, `security-log-ingestion`; job `codemender-sandbox`. |
+| `cloud_run.tf` | Services `codemender-mcp-server`, `wiz-mcp-server`, `security-log-ingestion`; job `codemender-sandbox`. |
 | `scc.tf` | Org-level SCC export to `scc_export` (only when `scc_organization_id` is set). |
-| `outputs.tf` | URLs, MCP endpoint, bucket, WIF provider, SA email, dataset IDs, service agent emails, `github_actions_vars`. |
+| `outputs.tf` | URLs, `mcp_endpoint` (`CODEMENDER_MCP_URL`), `wiz_mcp_endpoint` (`WIZ_MCP_URL`), bucket, WIF provider, SA email, dataset IDs, service agent emails, `github_actions_vars`. |
 
 ## Security notes
 
-- Neither Cloud Run service allows `allUsers`. Both use ingress "all" and IAM-authenticated invocation. The ingestion service cannot use "internal and Cloud Load Balancing" ingress because Pub/Sub push requests do not come from the VPC.
+- None of the Cloud Run services allow `allUsers`. All three use ingress "all" and IAM-authenticated invocation. `wiz-mcp-sa` holds zero GCP data/job roles — its only permission is reading `wiz-client-secret`. `codemender-mcp-sa` holds BigQuery/Logging/Sandbox roles and has no access to `wiz-client-secret`. The ingestion service cannot use "internal and Cloud Load Balancing" ingress because Pub/Sub push requests do not come from the VPC.
 - The sandbox is a Cloud Run Job. Cloud Run Jobs run only on the second-generation execution environment (microVM). gVisor (gen1) is not available for jobs, even though the lab brief asked for gVisor. Isolation comes from the gen2 microVM, a VPC whose only allowed egress is tcp:443 to the restricted Google APIs VIP, and `sandbox-runner-sa`, which has no project roles (only `storage.objectViewer` on the sandbox bucket).
 - The sandbox cannot reach GitHub. Source and patches are staged in the sandbox bucket.
 - `github-actions-sa` can only be impersonated by workflows in `GITHUB_ORG/payment-service`. Its `run.developer` grant is scoped to the `codemender-sandbox` job only. Note that `run.developer` on the job also allows updating the job's configuration, not only executing it.

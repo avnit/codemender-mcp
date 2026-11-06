@@ -12,15 +12,16 @@ participant_members = [
   "group:security-lab-participants@example.com",
 ]
 
-# Wiz (optional). The client secret goes into Secret Manager, not here.
+# Wiz (wiz-mcp-server). The client secret goes into Secret Manager, not here.
 wiz_client_id    = ""
 wiz_api_endpoint = "" # e.g. https://api.<region>.app.wiz.io/graphql (confirm in your environment)
 
 # Images. Leave empty to use REGION-docker.pkg.dev/PROJECT/security-lab/<name>:<image_tag>.
-image_tag           = "latest"
-mcp_server_image    = ""
-log_ingestion_image = ""
-sandbox_image       = ""
+image_tag            = "latest"
+mcp_server_image     = ""
+wiz_mcp_server_image = ""
+log_ingestion_image  = ""
+sandbox_image        = ""
 
 # Phase 1: false (APIs, Artifact Registry, data, network, IAM). Phase 2: true.
 deploy_services = false

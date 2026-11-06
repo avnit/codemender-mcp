@@ -32,7 +32,7 @@ Why two are take-home: Module 05 is deploy-and-verify in class (the facilitator 
 
 | Starter file | What you write | Tests to run |
 |---|---|---|
-| `security_data_service.py` | `query_security_events()`, `get_code_to_cloud()` (the BigQuery fallback for `trace_code_to_cloud`) | from `mcp-server/`: `TestSecurityDataService` in `tests/test_new_tools.py` |
+| `security_data_service.py` | `query_security_events()`, `get_code_to_cloud()` (the BigQuery lookup for `trace_code_to_cloud` on `codemender-mcp-server`) | from `mcp-server/`: `TestSecurityDataService` in `tests/test_new_tools.py` |
 | `SKILL.md` | the Steps and Output format sections | no unit test; use the Module 07 step B4 prompt about `wiz-issue-0004` |
 | `toolsets.py` | `logging_toolset()`, `github_toolset()` (the Wiz and CodeMender factories are worked examples) | from `agent/`: `SkipTest` and `HeaderTest` in `tests/test_toolsets.py` |
 | `parser.py` (take-home) | `classify()`, `build_security_event()` | from `log-ingestion/`: `ClassifyTests`, `SecurityEventTests`, `ParseLogEntryTests` in `tests/test_parser.py` |
@@ -57,7 +57,7 @@ These counts come from copying each starter over its solution file in a scratch 
 | Starter | Tests that fail until the TODOs are done |
 |---|---|
 | `mcp-server/services/security_data_service.py` | 4 of 9 in `TestSecurityDataService`: `test_security_events`, `test_limits_and_days_clamped`, `test_query_errors_become_error_dicts`, `test_code_to_cloud_and_finding_lookup`. The other 5 pass. `TestServerTools` mocks the service, so this file does not affect it. |
-| `agent/security_agent/toolsets.py` | 5 of 51: `HeaderTest.test_logging_access_token_and_quota_header`, `HeaderTest.test_github_static_bearer_and_filter`, `SkipTest.test_all_configured_builds_four_toolsets_without_network`, `SkipTest.test_missing_config_skips_cleanly`, `SkipTest.test_toggles_disable_each_toolset`. The two factories return `None` until done. |
+| `agent/security_agent/toolsets.py` | 5 tests in `tests/test_toolsets.py`: `HeaderTest.test_logging_access_token_and_quota_header`, `HeaderTest.test_github_static_bearer_and_filter`, `SkipTest.test_all_configured_builds_four_toolsets_without_network`, `SkipTest.test_missing_config_skips_cleanly`, `SkipTest.test_toggles_disable_each_toolset`. The two factories return `None` until done. |
 | `log-ingestion/parser.py` | 30 of 42: all of `ClassifyTests`, `SecurityEventTests`, `SandboxRunTests`, `FindingTests`, `ParseLogEntryTests`, plus `TruncationTests.test_raw_payload_capped`. `build_sandbox_run()` and `build_finding()` call `classify()`, so their tests fail too. Do `classify()` first. |
 | `mcp-server/server_new_tools.py` | Not run directly. Once pasted into `server.py` with TODO bodies: the four `test_trace_code_to_cloud_*` tests and `test_pass_through_tools`. |
 

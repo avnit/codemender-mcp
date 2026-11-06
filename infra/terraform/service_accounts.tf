@@ -6,6 +6,16 @@ resource "google_service_account" "codemender_mcp" {
   depends_on = [google_project_service.apis]
 }
 
+# wiz-mcp-sa has NO project-level roles (no BigQuery, Logging, GCS, or Cloud Run Job
+# access). Its ONLY grant is roles/secretmanager.secretAccessor on wiz-client-secret.
+resource "google_service_account" "wiz_mcp" {
+  project      = var.project_id
+  account_id   = "wiz-mcp-sa"
+  display_name = "wiz-mcp-server runtime"
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_service_account" "log_ingestion" {
   project      = var.project_id
   account_id   = "log-ingestion-sa"

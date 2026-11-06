@@ -4,8 +4,18 @@ output "mcp_server_url" {
 }
 
 output "mcp_endpoint" {
-  description = "MCP endpoint for Gemini Enterprise and the ADK agent (CODEMENDER_MCP_URL)."
+  description = "CodeMender MCP endpoint for Gemini Enterprise and the ADK agent (CODEMENDER_MCP_URL)."
   value       = var.deploy_services ? "${local.mcp_url}/mcp" : null
+}
+
+output "wiz_mcp_server_url" {
+  description = "wiz-mcp-server base URL (null until deploy_services = true)."
+  value       = local.wiz_mcp_url
+}
+
+output "wiz_mcp_endpoint" {
+  description = "Wiz MCP endpoint for Gemini Enterprise and the ADK agent (WIZ_MCP_URL)."
+  value       = var.deploy_services ? "${local.wiz_mcp_url}/mcp" : null
 }
 
 output "log_ingestion_url" {

@@ -68,8 +68,8 @@ Trace wiz-issue-0004, the container CVE, back to the repository, Dockerfile, bas
 ```
 
 Expected tools (skill `code-to-cloud-attribution`):
-- `get_wiz_issue_details(issue_id="wiz-issue-0004")` or Wiz MCP
-- `trace_code_to_cloud(issue_id="wiz-issue-0004")`
+- `wiz_trace_code_to_cloud(issue_id="wiz-issue-0004")` and/or `get_wiz_issue_details(issue_id="wiz-issue-0004")` (Wiz MCP `wiz-mcp-server`)
+- `trace_code_to_cloud(issue_id="wiz-issue-0004")` (CodeMender MCP `codemender-mcp-server` BigQuery fallback)
 - GitHub MCP read of `Dockerfile` and the Terraform file at the reported commit
 
 Expected answer shape:
@@ -196,7 +196,7 @@ Explain the architecture of payment-service in plain language.
 
 Expected tools:
 - GitHub MCP file reads on `payment-service` (`README`, `app/`, `Dockerfile`, `terraform/main.tf`).
-- `trace_code_to_cloud(resource_id="//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service")`.
+- `wiz_trace_code_to_cloud(resource_id="//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service")` and/or `trace_code_to_cloud(resource_id="//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service")`.
 - Optionally Wiz MCP for the resource graph.
 
 Expected answer shape:

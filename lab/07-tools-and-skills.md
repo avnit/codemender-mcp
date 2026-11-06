@@ -53,11 +53,11 @@ The TODOs:
    LIMIT @limit
    ```
 
-2. **`trace_code_to_cloud(issue_id=None, resource_id=None)` fallback**
-   - The tool asks Wiz first. If Wiz returns nothing or is not configured, fall back to `security_lab.code_to_cloud_map` (env `CODE_TO_CLOUD_TABLE`).
-   - Return the same shape from both paths, plus a `source` field (`wiz` or `bigquery`) so the agent can say where the answer came from.
+2. **`trace_code_to_cloud(issue_id=None, resource_id=None)` BigQuery lookup**
+   - In `codemender-mcp-server`, `trace_code_to_cloud` queries BigQuery `security_lab.code_to_cloud_map` (env `CODE_TO_CLOUD_TABLE`), resolving an `issue_id` via `codemender.findings` first when needed. (Live Wiz GraphQL code-to-cloud attribution lives in `wiz_trace_code_to_cloud` on `wiz-mcp-server`.)
+   - Return `source: "bigquery"` so the agent can cite which MCP service answered.
 
-   Reference fallback SQL:
+   Reference lookup SQL:
 
    ```sql
    SELECT resource_id, resource_name, cloud_platform, image, image_digest, base_image,
@@ -66,7 +66,7 @@ The TODOs:
    WHERE resource_id = @resource_id
    ```
 
-   When only `issue_id` is given, resolve the resource first (Wiz issue -> resource id; or the seed mapping for `wiz-issue-0001`..`wiz-issue-0004`).
+   When only `issue_id` is given, resolve the repository first from `codemender.findings` (`CM-0001`..`CM-0004` / `wiz-issue-0001`..`wiz-issue-0004`).
 
 3. Register both functions as MCP tools with clear docstrings. The docstring is what the model reads when choosing a tool.
 
@@ -77,9 +77,9 @@ cd mcp-server
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
 
-Expected: `OK`. Tests stub `google.cloud.bigquery` and the Wiz client.
+Expected: `OK`. Tests stub `google.cloud.bigquery`, Cloud Logging, and Cloud Run Jobs. (You can also run `wiz-mcp-server`'s unit tests from `wiz-mcp-server/`.)
 
-Check that the server registers all tools:
+Check that `codemender-mcp-server` registers all 14 CodeMender/BigQuery/Sandbox tools:
 
 ```bash
 cd mcp-server
@@ -89,7 +89,7 @@ tools = asyncio.run(server.mcp.list_tools())
 print(sorted(t.name for t in tools))"
 ```
 
-This assumes the FastMCP instance is called `mcp` in `server.py` (confirm in your environment). Expected list includes the existing tools and the new ones: `wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`, `trace_code_to_cloud`, `query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`, `start_sandbox_validation`, `get_sandbox_result`.
+Expected list includes the CodeMender/BigQuery/Logging tools and: `trace_code_to_cloud`, `query_scc_findings`, `query_model_armor_logs`, `query_vpcsc_violations`, `query_security_events`, `start_sandbox_validation`, `get_sandbox_result`. (Meanwhile `wiz-mcp-server/server.py` registers `list_wiz_issues`, `get_wiz_issue_details`, `get_wiz_issues_summary`, `query_wiz_graphql`, `wiz_top_internet_facing_vulnerabilities`, `wiz_excessive_permission_identities`, and `wiz_trace_code_to_cloud`.)
 
 ### A3. Redeploy the MCP server (3 min)
 
@@ -107,16 +107,18 @@ export MCP_URL="${SERVICE_URL}/mcp"
 echo "$MCP_URL"
 ```
 
-### A4. Connect to Gemini Enterprise as a custom MCP connector (5 min)
+### A4. Connect to Gemini Enterprise as custom MCP connectors (5 min)
 
-Terraform already granted `roles/run.invoker` on `codemender-mcp-server` to the Discovery Engine service agent `service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com`. Verify:
+Terraform already granted `roles/run.invoker` on both `codemender-mcp-server` and `wiz-mcp-server` to the Discovery Engine service agent `service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com`. Verify:
 
 ```bash
 gcloud run services get-iam-policy codemender-mcp-server --region="$REGION" \
   --format="table(bindings.role,bindings.members)"
+gcloud run services get-iam-policy wiz-mcp-server --region="$REGION" \
+  --format="table(bindings.role,bindings.members)"
 ```
 
-Expected: `roles/run.invoker` for the Discovery Engine service agent and for the Agent Engine service agent `service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com`.
+Expected: `roles/run.invoker` for the Discovery Engine service agent and for the Agent Engine service agent `service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com` on both services.
 
 The org policy `discoveryengine.managed.disableCustomMcpServerConnector` must allow custom MCP connectors:
 
@@ -127,7 +129,7 @@ gcloud org-policies describe discoveryengine.managed.disableCustomMcpServerConne
 
 Create an OAuth 2.0 client (APIs & Services > Credentials > Create credentials > OAuth client ID > **Web application**) with authorized redirect URI `https://vertexaisearch.cloud.google.com/oauth-redirect`.
 
-In the Gemini Enterprise admin console, add a custom MCP connector (menu names may differ; confirm in your environment):
+In the Gemini Enterprise admin console, add a custom MCP connector for `codemender-mcp-server` (and optionally a second one for `wiz-mcp-server`, `https://wiz-mcp-server-XXXX.us-central1.run.app/mcp`):
 
 | Field | Value |
 |---|---|
@@ -140,7 +142,7 @@ In the Gemini Enterprise admin console, add a custom MCP connector (menu names m
 
 Authorize the connector, then in a Gemini Enterprise chat ask: `Using the CodeMender connector, list critical CodeMender issues.` Expected: a call to `list_codemender_issues` and a list including `CM-0001`.
 
-To connect the same server to the ADK agent, set `CODEMENDER_MCP_URL` in `agent/.env` (Part C).
+To connect both Cloud Run MCP servers to the ADK agent, set `CODEMENDER_MCP_URL` and `WIZ_MCP_URL` in `agent/.env` (Part C).
 
 ---
 
@@ -163,7 +165,7 @@ description: Trace a cloud finding (Wiz issue, image CVE, resource) back to the 
 ## Steps
 1. ...
 ## Tools
-- trace_code_to_cloud ...
+- wiz_trace_code_to_cloud / trace_code_to_cloud ...
 ## Output format
 ...
 ## Do not
@@ -182,11 +184,10 @@ Complete the TODOs in `starter/agent/skills/code-to-cloud-attribution/SKILL.md`,
 
 The body should tell the agent to:
 
-1. Get the resource and image from Wiz (`get_wiz_issue_details` or Wiz remote MCP).
-2. Call `trace_code_to_cloud(issue_id=...)` or `trace_code_to_cloud(resource_id=...)`.
-3. Confirm in GitHub (GitHub remote MCP: read `Dockerfile` and the Terraform file at the reported commit).
-4. Report: resource -> image (+ digest) -> base image -> repository -> commit -> Dockerfile path -> Terraform path, and which source answered (`wiz` or `bigquery`).
-5. Say "not found" rather than guess when a link is missing.
+1. Call `wiz_trace_code_to_cloud` on `wiz-mcp-server` (and/or `get_wiz_issue_details`), falling back to `trace_code_to_cloud` on `codemender-mcp-server` (`security_lab.code_to_cloud_map`) when Wiz has no repository link.
+2. Confirm in GitHub (GitHub remote MCP: read `Dockerfile` and the Terraform file at the reported commit).
+3. Report: resource -> image (+ digest) -> base image -> repository -> commit -> Dockerfile path -> Terraform path, and which source answered (`wiz` or `bigquery`).
+4. Say "not found" rather than guess when a link is missing.
 
 ### B4. Test the behavior change (3 min)
 
@@ -196,7 +197,7 @@ Run `adk web` (step C2) twice: once with the starter skill (TODOs not done), onc
 Where did the container image behind wiz-issue-0004 come from? Give me the repo, Dockerfile, base image and Terraform file.
 ```
 
-Expected with the completed skill: the agent calls `trace_code_to_cloud`, then reads `Dockerfile` through GitHub MCP, and answers with `your-github-org/payment-service`, `Dockerfile`, `python:3.8-slim-buster`, and the Terraform path from `code_to_cloud_map`. With the starter skill it typically stops after the Wiz lookup or skips the GitHub confirmation.
+Expected with the completed skill: the agent calls `wiz_trace_code_to_cloud` and/or `trace_code_to_cloud`, then reads `Dockerfile` through GitHub MCP, and answers with `your-github-org/payment-service`, `Dockerfile`, `python:3.8-slim-buster`, and the Terraform path from `code_to_cloud_map`. With the starter skill it typically stops after the Wiz lookup or skips the GitHub confirmation.
 
 ---
 
@@ -206,14 +207,14 @@ Expected with the completed skill: the agent calls `trace_code_to_cloud`, then r
 
 Complete the TODOs in `starter/agent/security_agent/toolsets.py`, or copy the solution from `agent/security_agent/toolsets.py` if you fall behind.
 
-Each remote MCP server becomes an ADK `McpToolset` over streamable HTTP:
+Each MCP server becomes an ADK `McpToolset` over streamable HTTP:
 
 | Toolset | URL env var | Auth | Toggle |
 |---|---|---|---|
-| Wiz | `WIZ_MCP_URL=https://mcp.app.wiz.io` | `WIZ_CLIENT_ID`/`WIZ_CLIENT_SECRET` or `WIZ_MCP_TOKEN` | `ENABLE_WIZ` |
+| Wiz (`wiz-mcp-server` on Cloud Run, or `mcp.app.wiz.io`) | `WIZ_MCP_URL` | Google ID token for Cloud Run (`*.run.app`), or `WIZ_CLIENT_ID`/`WIZ_CLIENT_SECRET` / `WIZ_MCP_TOKEN` for `mcp.app.wiz.io` | `ENABLE_WIZ` |
 | Cloud Logging | `CLOUD_LOGGING_MCP_URL=https://logging.googleapis.com/mcp` | Google ADC access token | `ENABLE_LOGGING` |
 | GitHub | `GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/` | `Authorization: Bearer $GITHUB_PAT` | `ENABLE_GITHUB` |
-| CodeMender (custom) | `CODEMENDER_MCP_URL` | Google ID token for the Cloud Run audience | `ENABLE_CODEMENDER` |
+| CodeMender (`codemender-mcp-server` on Cloud Run) | `CODEMENDER_MCP_URL` | Google ID token for the Cloud Run audience | `ENABLE_CODEMENDER` |
 
 The TODOs:
 
@@ -227,7 +228,7 @@ cd agent
 cp .env.example .env
 ```
 
-Fill in placeholders: `GOOGLE_CLOUD_PROJECT=your-gcp-project-id`, `GOOGLE_CLOUD_LOCATION=us-central1`, `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, `AGENT_MODEL=gemini-2.5-flash`, `GITHUB_ORG=your-github-org`, `GITHUB_PAT=ghp_REPLACE_ME`, `CODEMENDER_MCP_URL=$MCP_URL`, `STAGING_BUCKET=gs://your-gcp-project-id-agent-staging`. Keep `.env` out of git.
+Fill in placeholders: `GOOGLE_CLOUD_PROJECT=your-gcp-project-id`, `GOOGLE_CLOUD_LOCATION=us-central1`, `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, `AGENT_MODEL=gemini-2.5-flash`, `GITHUB_ORG=your-github-org`, `GITHUB_PAT=ghp_REPLACE_ME`, `WIZ_MCP_URL=$WIZ_MCP_URL`, `CODEMENDER_MCP_URL=$MCP_URL`, `STAGING_BUCKET=gs://your-gcp-project-id-agent-staging`. Keep `.env` out of git.
 
 ### C2. Run `adk web` locally (3 min)
 
@@ -283,7 +284,7 @@ python3 deploy.py
 export AGENT_ENGINE_ID=projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<ID>
 ```
 
-Secrets: the deployed agent must not get `GITHUB_PAT` or Wiz secrets in plain env vars. Check `deploy.py` for how it reads them from Secret Manager (`github-mcp-pat`, `wiz-client-secret`) (confirm in your environment).
+Secrets: the deployed agent must not get `GITHUB_PAT` or Wiz secrets in plain env vars. Check `deploy.py` for how it reads `github-mcp-pat` from Secret Manager (and `wiz-client-secret` only if pointing `WIZ_MCP_URL` at external `https://mcp.app.wiz.io`; when `WIZ_MCP_URL` points at Cloud Run `wiz-mcp-server`, `wiz-mcp-sa` reads `wiz-client-secret` instead) (confirm in your environment).
 
 ### C5. Register in Gemini Enterprise (2 min)
 
@@ -295,7 +296,7 @@ Test from Gemini Enterprise: `List the top 5 critical internet-facing vulnerabil
 
 ## Check your work
 
-- [ ] `mcp-server` tests pass; `query_security_events` and the `trace_code_to_cloud` fallback work.
+- [ ] `mcp-server` (and `wiz-mcp-server`) tests pass; `query_security_events` and `trace_code_to_cloud` (BigQuery lookup) work.
 - [ ] `codemender-mcp-server` redeployed; the A2 tool list includes the new tools.
 - [ ] Gemini Enterprise custom MCP connector authorized and answered a question.
 - [ ] `code-to-cloud-attribution` skill completed; the agent's answer changed.
@@ -309,8 +310,8 @@ See [troubleshooting.md](troubleshooting.md): [GE custom MCP connector](troubles
 
 ## What you built
 
-- New MCP tools with parameterized SQL and a Wiz-to-BigQuery fallback.
-- A custom MCP connector in Gemini Enterprise backed by Cloud Run with OAuth.
+- Dedicated Cloud Run MCP tools across `codemender-mcp-server` (parameterized BigQuery SQL and `code_to_cloud_map` lookups) and `wiz-mcp-server` (Wiz GraphQL exposure, excessive permissions, and `wiz_trace_code_to_cloud`).
+- Custom MCP connector(s) in Gemini Enterprise backed by Cloud Run with OAuth.
 - A file-based skill that changes how the agent investigates.
 - An ADK agent with four toolsets and guardrails, deployed to Agent Engine and registered in Gemini Enterprise.
 

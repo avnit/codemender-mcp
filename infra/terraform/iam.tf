@@ -175,7 +175,7 @@ resource "google_project_iam_member" "github_actions_logging_viewer" {
 # Google-managed service agents
 # ===========================================================================
 
-# Gemini Enterprise custom MCP connector calls the MCP server as the
+# Gemini Enterprise custom MCP connector calls both MCP servers as the
 # Discovery Engine service agent.
 resource "google_cloud_run_v2_service_iam_member" "mcp_invoker_discovery_engine" {
   count = var.deploy_services ? 1 : 0
@@ -189,8 +189,20 @@ resource "google_cloud_run_v2_service_iam_member" "mcp_invoker_discovery_engine"
   depends_on = [google_project_service.apis]
 }
 
-# The ADK agent on Agent Engine calls the MCP server and reads logs as the
-# Agent Engine (Reasoning Engine) service agent. This agent may not exist
+resource "google_cloud_run_v2_service_iam_member" "wiz_mcp_invoker_discovery_engine" {
+  count = var.deploy_services ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.wiz_mcp_server[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${local.discovery_engine_service_agent}"
+
+  depends_on = [google_project_service.apis]
+}
+
+# The ADK agent on Agent Engine calls both Cloud Run MCP servers and reads logs
+# as the Agent Engine (Reasoning Engine) service agent. This agent may not exist
 # until Agent Engine is first used; see the note in secrets.tf.
 resource "google_cloud_run_v2_service_iam_member" "mcp_invoker_agent_engine" {
   count = var.deploy_services ? 1 : 0
@@ -198,6 +210,18 @@ resource "google_cloud_run_v2_service_iam_member" "mcp_invoker_agent_engine" {
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.mcp_server[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${local.agent_engine_service_agent}"
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "wiz_mcp_invoker_agent_engine" {
+  count = var.deploy_services ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.wiz_mcp_server[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${local.agent_engine_service_agent}"
 

@@ -4,7 +4,6 @@
 locals {
   # Env vars for codemender-mcp-server (NAMING.md). PORT is not set here:
   # Cloud Run reserves PORT and sets it from the container port (8080).
-  # WIZ_CLIENT_SECRET is injected from Secret Manager below.
   mcp_env = {
     GCP_PROJECT_ID        = var.project_id
     REGION                = var.region
@@ -12,11 +11,6 @@ locals {
     BQ_DATASET            = local.bq_dataset
     BQ_TABLE              = local.bq_table
     LOG_NAME_FILTER       = "codemender"
-    WIZ_CLIENT_ID         = var.wiz_client_id
-    WIZ_API_ENDPOINT      = var.wiz_api_endpoint
-    WIZ_AUTH_URL          = var.wiz_auth_url
-    WIZ_AUDIENCE          = var.wiz_audience
-    WIZ_SECRET_NAME       = local.wiz_secret_name
     SECURITY_DATASET      = local.security_dataset
     SECURITY_EVENTS_TABLE = local.security_events_table
     SANDBOX_RUNS_TABLE    = local.sandbox_runs_table
@@ -29,6 +23,17 @@ locals {
     SANDBOX_JOB_NAME      = local.sandbox_job_name
     SANDBOX_REGION        = var.region
     SANDBOX_BUCKET        = local.sandbox_bucket_name
+  }
+
+  # Env vars for wiz-mcp-server. WIZ_CLIENT_SECRET is injected from Secret Manager below.
+  wiz_mcp_env = {
+    GCP_PROJECT_ID   = var.project_id
+    REGION           = var.region
+    SERVICE_NAME     = local.wiz_mcp_service_name
+    WIZ_CLIENT_ID    = var.wiz_client_id
+    WIZ_API_ENDPOINT = var.wiz_api_endpoint
+    WIZ_AUTH_URL     = var.wiz_auth_url
+    WIZ_AUDIENCE     = var.wiz_audience
   }
 
   ingestion_env = {
@@ -52,7 +57,7 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# codemender-mcp-server
+# codemender-mcp-server (Code Mender BigQuery, Cloud Logging, Sandbox Job)
 # Ingress all, but NOT public: there is no allUsers invoker binding. Callers
 # (Gemini Enterprise via the Discovery Engine service agent, Agent Engine
 # service agent) are granted roles/run.invoker in iam.tf.
@@ -89,6 +94,56 @@ resource "google_cloud_run_v2_service" "mcp_server" {
         }
       }
 
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+  ]
+}
+
+# ---------------------------------------------------------------------------
+# wiz-mcp-server (Dedicated Wiz Cloud Security MCP Server)
+# Runs under wiz-mcp-sa, whose ONLY permission is reading wiz-client-secret.
+# ---------------------------------------------------------------------------
+resource "google_cloud_run_v2_service" "wiz_mcp_server" {
+  count = var.deploy_services ? 1 : 0
+
+  project             = var.project_id
+  name                = local.wiz_mcp_service_name
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false # lab only
+
+  template {
+    service_account = google_service_account.wiz_mcp.email
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 3
+    }
+
+    containers {
+      image = local.wiz_mcp_server_image
+
+      ports {
+        container_port = 8080
+      }
+
+      dynamic "env" {
+        for_each = local.wiz_mcp_env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
       env {
         name = "WIZ_CLIENT_SECRET"
         value_source {
@@ -110,7 +165,7 @@ resource "google_cloud_run_v2_service" "mcp_server" {
 
   depends_on = [
     google_project_service.apis,
-    google_secret_manager_secret_iam_member.wiz_secret_mcp_sa,
+    google_secret_manager_secret_iam_member.wiz_secret_wiz_mcp_sa,
   ]
 }
 

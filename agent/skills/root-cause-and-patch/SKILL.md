@@ -22,9 +22,9 @@ description: Read a finding, locate the vulnerable code through GitHub MCP, expl
 - CWE-1104 outdated base image (`Dockerfile`, `python:3.8-slim-buster`): move to a supported image such as `python:3.12-slim-bookworm` (pin by digest if the repo does), keep the `org.opencontainers.image.source` label, and check `requirements.txt` still installs on the new Python version.
 
 ## Tools
-- CodeMender MCP: `get_issue_details`, `trace_code_to_cloud`.
+- CodeMender MCP (`codemender-mcp-server`): `get_issue_details`, `trace_code_to_cloud`.
 - GitHub MCP: `get_file_contents`, `list_commits`, `search_code`.
-- Wiz MCP or `wiz_excessive_permission_identities` for IAM evidence.
+- Wiz MCP (`wiz-mcp-server`): `wiz_excessive_permission_identities`, `wiz_trace_code_to_cloud` for IAM and cloud exposure evidence.
 
 ## Output format
 ```

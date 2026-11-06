@@ -10,9 +10,9 @@ description: Connect a cloud resource or Wiz issue to the repository, file, comm
 
 ## Steps
 1. Start from what you have:
-   - Resource ID (for example `//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service`): call `trace_code_to_cloud(resource_id=...)`.
-   - Finding or Wiz issue ID: call `trace_code_to_cloud(issue_id=...)`.
-2. `trace_code_to_cloud` asks Wiz first and falls back to `security_lab.code_to_cloud_map`. Report which one answered.
+   - Resource ID (for example `//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service`): call `wiz_trace_code_to_cloud(resource_id=...)` on Wiz MCP (`wiz-mcp-server`) if connected, and/or `trace_code_to_cloud(resource_id=...)` on CodeMender MCP (`codemender-mcp-server`).
+   - Finding or Wiz issue ID: call `wiz_trace_code_to_cloud(issue_id=...)` on Wiz MCP first if connected; if Wiz is not connected or returns `found=False`, call `trace_code_to_cloud(issue_id=...)` on CodeMender MCP (`security_lab.code_to_cloud_map` + `codemender.findings`).
+2. Report which MCP service answered (`source: wiz` from `wiz_trace_code_to_cloud` vs `source: bigquery` from `trace_code_to_cloud`).
 3. Read the mapping fields: `repository`, `commit_sha`, `image`, `image_digest`, `base_image`, `dockerfile_path`, `terraform_path`.
 4. Confirm in GitHub: `get_file_contents` for the Dockerfile or Terraform file at `commit_sha`. Check the image label `org.opencontainers.image.source=https://github.com/<github_org>/payment-service`.
 5. Decide where the fix lives:
@@ -22,8 +22,8 @@ description: Connect a cloud resource or Wiz issue to the repository, file, comm
 6. Find the owner from CODEOWNERS (`get_file_contents` on `.github/CODEOWNERS`).
 
 ## Tools
-- CodeMender MCP: `trace_code_to_cloud`, `query_codemender_bigquery` (read-only SQL on the mapping if needed).
-- Wiz MCP: resource and code-to-cloud graph.
+- Wiz MCP (`wiz-mcp-server` on Cloud Run): `wiz_trace_code_to_cloud`, `get_wiz_issue_details`, `query_wiz_graphql`.
+- CodeMender MCP (`codemender-mcp-server` on Cloud Run): `trace_code_to_cloud`, `query_codemender_bigquery` (read-only SQL on `security_lab.code_to_cloud_map` if needed).
 - GitHub MCP: `get_file_contents`, `list_commits`.
 
 ## Output format
@@ -32,7 +32,7 @@ Resource: <resource_id>
 Built from: <repository>@<commit_sha>   image <image>@<digest>, base <base_image>
 Fix location: <path> (<reason>)
 Owner: <CODEOWNERS entry>
-Evidence: <tool + IDs>; mapping source: wiz | bigquery (the `source` field returned by trace_code_to_cloud)
+Evidence: <tool + IDs>; mapping source: wiz | bigquery (the `source` field returned by wiz_trace_code_to_cloud / trace_code_to_cloud)
 ```
 
 ## Do not

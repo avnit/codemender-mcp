@@ -38,11 +38,11 @@ variable "participant_members" {
 }
 
 # ---------------------------------------------------------------------------
-# Wiz (custom MCP server). The client secret is NOT a variable: it lives in
+# Wiz (wiz-mcp-server). The client secret is NOT a variable: it lives in
 # Secret Manager (wiz-client-secret) and is added with gcloud.
 # ---------------------------------------------------------------------------
 variable "wiz_client_id" {
-  description = "Wiz service account client ID. Leave empty to deploy without Wiz (Wiz tools return a 'not configured' error)."
+  description = "Wiz service account client ID for wiz-mcp-server. Leave empty to deploy without Wiz (Wiz tools return a 'not configured' error)."
   type        = string
   default     = ""
 }
@@ -77,6 +77,12 @@ variable "image_tag" {
 
 variable "mcp_server_image" {
   description = "Full image URI for codemender-mcp-server. Empty = Artifact Registry default."
+  type        = string
+  default     = ""
+}
+
+variable "wiz_mcp_server_image" {
+  description = "Full image URI for wiz-mcp-server. Empty = Artifact Registry default."
   type        = string
   default     = ""
 }

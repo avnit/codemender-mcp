@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # deploy_cloud_run.sh
-# 
-# Builds and deploys the Code Mender MCP Server to Google Cloud Run.
-# Configures the required runtime Service Account with least-privilege IAM
-# roles to access BigQuery findings and Cloud Logging traces.
+#
+# Builds and deploys the Code Mender MCP Server (`codemender-mcp-server`) to
+# Google Cloud Run. Configures the dedicated runtime Service Account
+# (`codemender-mcp-sa`) with least-privilege IAM roles to access BigQuery
+# findings, Cloud Logging traces, and the `codemender-sandbox` Cloud Run Job.
+#
+# Wiz cloud security tools are deployed separately via `../wiz-mcp-server/deploy_cloud_run.sh`.
 # ==============================================================================
 set -euo pipefail
 
@@ -36,16 +39,6 @@ SA_NAME="${SA_NAME:-codemender-mcp-sa}"
 ALLOW_UNAUTHENTICATED="${ALLOW_UNAUTHENTICATED:-false}"
 BUILD_SERVICE_ACCOUNT="${BUILD_SERVICE_ACCOUNT:-}"
 LOG_NAME_FILTER="${LOG_NAME_FILTER:-codemender}"
-
-# Wiz (optional). WIZ_CLIENT_SECRET is stored in Secret Manager, never as a plain env var.
-WIZ_CLIENT_ID="${WIZ_CLIENT_ID:-}"
-WIZ_CLIENT_SECRET="${WIZ_CLIENT_SECRET:-}"
-WIZ_API_ENDPOINT="${WIZ_API_ENDPOINT:-}"
-WIZ_AUTH_URL="${WIZ_AUTH_URL:-https://auth.app.wiz.io/oauth/token}"
-WIZ_AUDIENCE="${WIZ_AUDIENCE:-wiz-api}"
-WIZ_SECRET_NAME="${WIZ_SECRET_NAME:-wiz-client-secret}"
-# Optional: comma-separated regions for user-managed secret replication (e.g. us-central1).
-WIZ_SECRET_LOCATIONS="${WIZ_SECRET_LOCATIONS:-}"
 
 # Org policy: open constraints/gcp.resourceLocations for this project before creating
 # resources. ORG_POLICY_ALLOWED_LOCATIONS defaults to "global in:<REGION>-locations".
@@ -81,12 +74,11 @@ print_usage() {
   echo ""
   echo "Settings are read from .env (see .env.example); override the path with ENV_FILE."
   echo "Environment variables: PROJECT_ID/GCP_PROJECT_ID, REGION, SERVICE_NAME, BQ_DATASET, BQ_TABLE, LOG_NAME_FILTER,"
-  echo "  BUILD_SERVICE_ACCOUNT, ALLOW_UNAUTHENTICATED, WIZ_CLIENT_ID, WIZ_CLIENT_SECRET, WIZ_API_ENDPOINT,"
-  echo "  WIZ_AUTH_URL, WIZ_AUDIENCE, WIZ_SECRET_NAME, SECURITY_DATASET, SECURITY_EVENTS_TABLE,"
+  echo "  BUILD_SERVICE_ACCOUNT, ALLOW_UNAUTHENTICATED, SECURITY_DATASET, SECURITY_EVENTS_TABLE,"
   echo "  SANDBOX_RUNS_TABLE, CODE_TO_CLOUD_TABLE, SCC_DATASET, SCC_TABLE, SECURITY_LOGS_DATASET,"
   echo "  MODEL_ARMOR_TABLE, VPCSC_TABLE, SANDBOX_JOB_NAME, SANDBOX_REGION, SANDBOX_BUCKET"
   echo "Org policy: OPEN_ORG_POLICY (default true), ORG_POLICY_ALLOWED_LOCATIONS"
-  echo "  (default \"global in:<REGION>-locations\"), WIZ_SECRET_LOCATIONS (user-managed replication)"
+  echo "  (default \"global in:<REGION>-locations\")"
 }
 
 # Parse command line arguments
@@ -145,19 +137,15 @@ echo -e "${BLUE}${BOLD}=========================================================
 echo -e "  GCP Project:          ${BOLD}${PROJECT_ID}${RESET}"
 echo -e "  Region:               ${BOLD}${REGION}${RESET}"
 echo -e "  Cloud Run Service:    ${BOLD}${SERVICE_NAME}${RESET}"
+echo -e "  Service Account:      ${BOLD}${SA_NAME}${RESET}"
 echo -e "  BigQuery Dataset:     ${BOLD}${BQ_DATASET}${RESET}"
 echo -e "  BigQuery Table:       ${BOLD}${BQ_TABLE}${RESET}"
-if [[ -n "${WIZ_CLIENT_ID}" && -n "${WIZ_CLIENT_SECRET}" && -n "${WIZ_API_ENDPOINT}" ]]; then
-  echo -e "  Wiz Integration:      ${BOLD}enabled (${WIZ_API_ENDPOINT})${RESET}"
-else
-  echo -e "  Wiz Integration:      ${BOLD}disabled (set WIZ_* values in .env to enable)${RESET}"
-fi
 echo -e "  Allow Public Access:  ${BOLD}${ALLOW_UNAUTHENTICATED}${RESET}"
 echo -e "${BLUE}${BOLD}============================================================${RESET}"
 echo ""
 
 # 1. Enable required GCP APIs
-echo -e "${YELLOW}==> [1/5] Enabling required GCP APIs...${RESET}"
+echo -e "${YELLOW}==> [1/6] Enabling required GCP APIs...${RESET}"
 gcloud services enable \
   run.googleapis.com \
   bigquery.googleapis.com \
@@ -167,18 +155,11 @@ gcloud services enable \
   --project="${PROJECT_ID}"
 
 # 1b. Organization policy: allow the locations this deploy creates resources in.
-# Secret Manager automatic replication creates the secret in "global", which
-# constraints/gcp.resourceLocations blocks unless "global" is allowed. This sets a
-# project-level policy that keeps inheriting the parent's allowed locations and
-# adds ORG_POLICY_ALLOWED_LOCATIONS. Requires roles/orgpolicy.policyAdmin
-# (granted at the organization or folder). Set OPEN_ORG_POLICY=false to skip.
-ORG_POLICY_OPENED="false"
 ORG_POLICY_ALLOWED_LOCATIONS="${ORG_POLICY_ALLOWED_LOCATIONS:-global in:${REGION}-locations}"
 if [[ "${OPEN_ORG_POLICY}" == "true" ]]; then
   echo -e "${YELLOW}==> Opening constraints/gcp.resourceLocations for ${PROJECT_ID} (${ORG_POLICY_ALLOWED_LOCATIONS})...${RESET}"
   gcloud services enable orgpolicy.googleapis.com --project="${PROJECT_ID}"
 
-  # Keep any values already set in an existing project-level policy.
   EXISTING_VALUES=$(gcloud org-policies describe gcp.resourceLocations \
     --project="${PROJECT_ID}" \
     --format='value(spec.rules[].values.allowedValues)' 2>/dev/null | tr ';,' '  ' || true)
@@ -197,11 +178,9 @@ if [[ "${OPEN_ORG_POLICY}" == "true" ]]; then
   } > "${POLICY_FILE}"
 
   if gcloud org-policies set-policy "${POLICY_FILE}" >/dev/null; then
-    ORG_POLICY_OPENED="true"
     echo -e "${GREEN}    Project policy updated. Changes can take a few minutes to take effect.${RESET}"
   else
-    echo -e "${YELLOW}    Could not update the org policy (needs roles/orgpolicy.policyAdmin on the org or folder).${RESET}"
-    echo -e "${YELLOW}    Continuing: the Wiz secret will be stored in ${REGION} instead of global.${RESET}"
+    echo -e "${YELLOW}    Could not update the org policy (needs roles/orgpolicy.policyAdmin on the org or folder). Continuing.${RESET}"
   fi
   rm -f "${POLICY_FILE}"
   unset EXISTING_VALUES POLICY_FILE
@@ -209,7 +188,7 @@ fi
 
 # 2. Create runtime Service Account
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-echo -e "${YELLOW}==> [2/5] Setting up runtime Service Account: ${SA_EMAIL}...${RESET}"
+echo -e "${YELLOW}==> [2/6] Setting up runtime Service Account: ${SA_EMAIL}...${RESET}"
 if ! gcloud iam service-accounts describe "${SA_EMAIL}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
   gcloud iam service-accounts create "${SA_NAME}" \
     --display-name="Code Mender MCP Server Runtime SA" \
@@ -219,8 +198,8 @@ else
   echo "    Service account ${SA_EMAIL} already exists."
 fi
 
-# 3. Grant IAM roles (least privilege)
-echo -e "${YELLOW}==> [3/5] Assigning BigQuery and Cloud Logging IAM permissions...${RESET}"
+# 3. Grant IAM roles (least privilege: BigQuery, Logging, Cloud Run Job viewer)
+echo -e "${YELLOW}==> [3/6] Assigning BigQuery and Cloud Logging IAM permissions...${RESET}"
 IAM_ROLES=(
   "roles/bigquery.dataViewer"
   "roles/bigquery.jobUser"
@@ -265,7 +244,6 @@ ENV_VARS="${ENV_VARS},SANDBOX_RUNS_TABLE=${SANDBOX_RUNS_TABLE},CODE_TO_CLOUD_TAB
 ENV_VARS="${ENV_VARS},SCC_DATASET=${SCC_DATASET},SCC_TABLE=${SCC_TABLE},SECURITY_LOGS_DATASET=${SECURITY_LOGS_DATASET}"
 ENV_VARS="${ENV_VARS},MODEL_ARMOR_TABLE=${MODEL_ARMOR_TABLE},VPCSC_TABLE=${VPCSC_TABLE}"
 ENV_VARS="${ENV_VARS},SANDBOX_JOB_NAME=${SANDBOX_JOB_NAME},SANDBOX_REGION=${SANDBOX_REGION},SANDBOX_BUCKET=${SANDBOX_BUCKET}"
-SECRETS_FLAG=""
 
 # Sandbox job: start_sandbox_validation needs run.jobs.runWithOverrides on the job only.
 if gcloud run jobs describe "${SANDBOX_JOB_NAME}" --region="${SANDBOX_REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
@@ -280,81 +258,8 @@ else
   echo "    Sandbox job ${SANDBOX_JOB_NAME} not found in ${SANDBOX_REGION}; skipping job IAM binding (re-run after Module 04)."
 fi
 
-# Wiz: store the client secret in Secret Manager and mount it as WIZ_CLIENT_SECRET
-if [[ -n "${WIZ_CLIENT_ID}" && -n "${WIZ_CLIENT_SECRET}" && -n "${WIZ_API_ENDPOINT}" ]]; then
-  echo -e "${YELLOW}==> Configuring Wiz integration (Secret Manager: ${WIZ_SECRET_NAME})...${RESET}"
-  gcloud services enable secretmanager.googleapis.com --project="${PROJECT_ID}"
-
-  if ! gcloud secrets describe "${WIZ_SECRET_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
-    # Replication: WIZ_SECRET_LOCATIONS (comma-separated regions) forces user-managed
-    # replication. Otherwise use automatic (global) and, if the location policy still
-    # blocks global, retry while the policy change propagates, then fall back to REGION.
-    create_secret() {
-      printf '%s' "${WIZ_CLIENT_SECRET}" | gcloud secrets create "${WIZ_SECRET_NAME}" \
-        --data-file=- \
-        "$@" \
-        --project="${PROJECT_ID}" 2>&1 >/dev/null
-    }
-
-    if [[ -n "${WIZ_SECRET_LOCATIONS}" ]]; then
-      CREATE_OUTPUT=$(create_secret --replication-policy=user-managed --locations="${WIZ_SECRET_LOCATIONS}") || {
-        echo "${CREATE_OUTPUT}" >&2; exit 1; }
-      echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME} in ${WIZ_SECRET_LOCATIONS}.${RESET}"
-    else
-      CREATED="false"
-      ATTEMPTS=1
-      if [[ "${ORG_POLICY_OPENED}" == "true" ]]; then ATTEMPTS=6; fi
-      for ((i = 1; i <= ATTEMPTS; i++)); do
-        if CREATE_OUTPUT=$(create_secret --replication-policy=automatic); then
-          CREATED="true"
-          echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME} (automatic replication).${RESET}"
-          break
-        fi
-        if [[ "${CREATE_OUTPUT}" != *"gcp.resourceLocations"* ]]; then
-          echo "${CREATE_OUTPUT}" >&2; exit 1
-        fi
-        if (( i < ATTEMPTS )); then
-          echo "    Location policy still blocks global (attempt ${i}/${ATTEMPTS}); waiting 30s for the policy change..."
-          sleep 30
-        fi
-      done
-
-      if [[ "${CREATED}" != "true" ]]; then
-        echo -e "${YELLOW}    Global location not allowed; creating ${WIZ_SECRET_NAME} with replication in ${REGION}.${RESET}"
-        CREATE_OUTPUT=$(create_secret --replication-policy=user-managed --locations="${REGION}") || {
-          echo "${CREATE_OUTPUT}" >&2; exit 1; }
-        echo -e "${GREEN}    Created secret ${WIZ_SECRET_NAME} in ${REGION}.${RESET}"
-      fi
-      unset CREATED ATTEMPTS
-    fi
-    unset CREATE_OUTPUT
-  else
-    CURRENT_SECRET=$(gcloud secrets versions access latest --secret="${WIZ_SECRET_NAME}" --project="${PROJECT_ID}" 2>/dev/null || echo "")
-    if [[ "${CURRENT_SECRET}" != "${WIZ_CLIENT_SECRET}" ]]; then
-      printf '%s' "${WIZ_CLIENT_SECRET}" | gcloud secrets versions add "${WIZ_SECRET_NAME}" \
-        --data-file=- \
-        --project="${PROJECT_ID}" >/dev/null
-      echo -e "${GREEN}    Added new version of secret ${WIZ_SECRET_NAME}.${RESET}"
-    else
-      echo "    Secret ${WIZ_SECRET_NAME} is already up to date."
-    fi
-    unset CURRENT_SECRET
-  fi
-
-  gcloud secrets add-iam-policy-binding "${WIZ_SECRET_NAME}" \
-    --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/secretmanager.secretAccessor" \
-    --project="${PROJECT_ID}" \
-    --quiet >/dev/null
-
-  ENV_VARS="${ENV_VARS},WIZ_CLIENT_ID=${WIZ_CLIENT_ID},WIZ_API_ENDPOINT=${WIZ_API_ENDPOINT},WIZ_AUTH_URL=${WIZ_AUTH_URL},WIZ_AUDIENCE=${WIZ_AUDIENCE}"
-  SECRETS_FLAG="--set-secrets=WIZ_CLIENT_SECRET=${WIZ_SECRET_NAME}:latest"
-else
-  echo "    Wiz integration not configured; skipping Wiz setup."
-fi
-
 # 6. Build and deploy container to Cloud Run
-echo -e "${YELLOW}==> [5/6] Building container and deploying to Cloud Run...${RESET}"
+echo -e "${YELLOW}==> [5/6] Building container and deploying ${SERVICE_NAME} to Cloud Run...${RESET}"
 if ! gcloud run deploy "${SERVICE_NAME}" \
   --source="." \
   --project="${PROJECT_ID}" \
@@ -362,7 +267,6 @@ if ! gcloud run deploy "${SERVICE_NAME}" \
   --service-account="${SA_EMAIL}" \
   ${BUILD_SA_FLAG} \
   --set-env-vars="${ENV_VARS}" \
-  ${SECRETS_FLAG} \
   --port=8080 \
   --cpu=1 \
   --memory=1Gi \
@@ -382,15 +286,10 @@ if ! gcloud run deploy "${SERVICE_NAME}" \
   exit 1
 fi
 
-# 6b. Let Gemini Enterprise call the service.
-# Gemini Enterprise calls Cloud Run MCP servers as the Discovery Engine service agent
-# (service-<PROJECT_NUMBER>@gcp-sa-discoveryengine.iam.gserviceaccount.com), sending an
-# ID token in X-Serverless-Authorization. Without roles/run.invoker the call fails with
-# HTTP 403 "insufficient_scope". Set GRANT_GEMINI_ENTERPRISE_INVOKER=false to skip.
+# 6b. Let Gemini Enterprise and Vertex AI Agent Engine call the service.
 if [[ "${GRANT_GEMINI_ENTERPRISE_INVOKER:-true}" == "true" && -n "${PROJECT_NUMBER}" ]]; then
   DE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com"
   echo -e "${YELLOW}==> Granting roles/run.invoker to Gemini Enterprise (${DE_AGENT})...${RESET}"
-  # Make sure the service agent exists (it is created on first use of the API).
   gcloud beta services identity create --service=discoveryengine.googleapis.com \
     --project="${PROJECT_ID}" >/dev/null 2>&1 || true
   if gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
@@ -406,6 +305,18 @@ if [[ "${GRANT_GEMINI_ENTERPRISE_INVOKER:-true}" == "true" && -n "${PROJECT_NUMB
     echo "      --member=serviceAccount:${DE_AGENT} --role=roles/run.invoker"
   fi
   unset DE_AGENT
+
+  AE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+  echo -e "${YELLOW}==> Granting roles/run.invoker to Vertex AI Agent Engine (${AE_AGENT})...${RESET}"
+  gcloud beta services identity create --service=aiplatform.googleapis.com \
+    --project="${PROJECT_ID}" >/dev/null 2>&1 || true
+  gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --member="serviceAccount:${AE_AGENT}" \
+    --role="roles/run.invoker" \
+    --quiet >/dev/null 2>&1 || true
+  unset AE_AGENT
 fi
 
 # 7. Retrieve Service URL and verify
@@ -421,27 +332,18 @@ echo -e "${GREEN}${BOLD}  Deployment Succeeded!                                 
 echo -e "${GREEN}${BOLD}============================================================${RESET}"
 echo -e "  Service URL:         ${BOLD}${SERVICE_URL}${RESET}"
 echo -e "  Health Check:        ${BOLD}${SERVICE_URL}/healthz${RESET}"
+echo -e "  MCP Streamable HTTP: ${BOLD}${SERVICE_URL}/mcp${RESET}"
 echo -e "  MCP SSE Endpoint:    ${BOLD}${SERVICE_URL}/sse${RESET}"
 echo -e "  MCP Messages:        ${BOLD}${SERVICE_URL}/messages${RESET}"
 echo -e "${GREEN}${BOLD}============================================================${RESET}"
 echo ""
-echo -e "${BOLD}Next Steps - Test your deployment:${RESET}"
+echo -e "${BOLD}Next Steps - Set CODEMENDER_MCP_URL in agent/.env:${RESET}"
+echo "  CODEMENDER_MCP_URL=${SERVICE_URL}/mcp"
 echo ""
+echo -e "${BOLD}Test your deployment:${RESET}"
 if [[ "${ALLOW_UNAUTHENTICATED}" == "true" ]]; then
   echo "  curl -f \"${SERVICE_URL}/healthz\""
 else
   echo "  curl -f -H \"Authorization: Bearer \$(gcloud auth print-identity-token)\" \\"
   echo "    \"${SERVICE_URL}/healthz\""
 fi
-echo ""
-echo -e "${BOLD}Client Configuration for MCP (e.g. Claude Desktop, Cursor, Jetski):${RESET}"
-echo "{"
-echo "  \"mcpServers\": {"
-echo "    \"codemender\": {"
-echo "      \"url\": \"${SERVICE_URL}/sse\","
-echo "      \"headers\": {"
-echo "        \"Authorization\": \"Bearer \$(gcloud auth print-identity-token)\""
-echo "      }"
-echo "    }"
-echo "  }"
-echo "}"

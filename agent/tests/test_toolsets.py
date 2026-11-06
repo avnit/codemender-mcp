@@ -60,6 +60,7 @@ class SkipTest(unittest.TestCase):
   def test_placeholders_count_as_missing(self):
     c = cfg(GITHUB_PAT="ghp_REPLACE_ME",
             CODEMENDER_MCP_URL="https://codemender-mcp-server-XXXX.us-central1.run.app/mcp",
+            WIZ_MCP_URL="https://wiz-mcp-server-XXXX.us-central1.run.app/mcp",
             WIZ_CLIENT_SECRET="REPLACE_ME")
     with self.assertLogs(ts.logger, level="WARNING"):
       self.assertIsNone(ts.github_toolset(c))
@@ -80,8 +81,30 @@ class SkipTest(unittest.TestCase):
     self.assertEqual(len(out), 4)
     self.assertTrue(all(isinstance(t, McpToolset) for t in out))
 
+  def test_cloud_run_wiz_mcp_builds_without_wiz_oauth_credentials(self):
+    c = cfg(
+        WIZ_MCP_URL="https://wiz-mcp-server-abc123.us-central1.run.app/mcp",
+        WIZ_CLIENT_ID=None,
+        WIZ_CLIENT_SECRET=None,
+    )
+    out = ts.build_toolsets(c)
+    self.assertEqual(len(out), 4)
+    self.assertTrue(all(isinstance(t, McpToolset) for t in out))
+
 
 class HeaderTest(unittest.TestCase):
+
+  def test_wiz_cloud_run_uses_fetch_id_token(self):
+    c = cfg(
+        WIZ_MCP_URL="https://wiz-mcp-server-abc123.us-central1.run.app/mcp",
+        WIZ_CLIENT_ID=None,
+        WIZ_CLIENT_SECRET=None,
+    )
+    with mock.patch("google.oauth2.id_token.fetch_id_token", return_value="wiz-id-tok") as f:
+      toolset = ts.wiz_toolset(c)
+      with mock.patch("google.auth.transport.requests.Request", return_value="req"):
+        self.assertEqual(toolset.header_provider(None), {"Authorization": "Bearer wiz-id-tok"})
+    f.assert_called_once_with("req", "https://wiz-mcp-server-abc123.us-central1.run.app")
 
   def test_wiz_static_token(self):
     toolset = ts.wiz_toolset(cfg(WIZ_MCP_TOKEN="static-wiz"))

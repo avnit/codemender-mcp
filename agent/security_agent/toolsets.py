@@ -186,6 +186,15 @@ def cloud_run_audience(mcp_url: str) -> str:
   return f"{parts.scheme}://{parts.netloc}"
 
 
+def is_cloud_run_url(mcp_url: str) -> bool:
+  """True when mcp_url targets an HTTPS Cloud Run (*.run.app) service."""
+  from urllib.parse import urlsplit
+
+  parts = urlsplit(mcp_url)
+  host = (parts.hostname or "").lower()
+  return parts.scheme.lower() == "https" and host.endswith(".run.app")
+
+
 def bearer_header_provider(source) -> Callable[[Any], dict[str, str]]:
   """Builds an ADK header_provider that returns a fresh bearer header."""
 
@@ -210,7 +219,10 @@ def _skip(server: str, reason: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def wiz_toolset(cfg: AgentConfig, token_source: WizTokenSource | None = None):
+def wiz_toolset(
+    cfg: AgentConfig,
+    token_source: WizTokenSource | GoogleIdTokenSource | None = None,
+):
   if not cfg.enable_wiz:
     _skip("Wiz", "ENABLE_WIZ is false")
     return None
@@ -224,6 +236,10 @@ def wiz_toolset(cfg: AgentConfig, token_source: WizTokenSource | None = None):
           auth_url=cfg.wiz_auth_url,
           audience=cfg.wiz_audience,
       )
+    elif is_cloud_run_url(cfg.wiz_mcp_url):
+      token_source = GoogleIdTokenSource(
+          audience=cloud_run_audience(cfg.wiz_mcp_url)
+      )
     elif cfg.wiz_client_id and cfg.wiz_client_secret:
       token_source = WizTokenSource(
           client_id=cfg.wiz_client_id,
@@ -232,7 +248,11 @@ def wiz_toolset(cfg: AgentConfig, token_source: WizTokenSource | None = None):
           audience=cfg.wiz_audience,
       )
     else:
-      _skip("Wiz", "set WIZ_MCP_TOKEN or WIZ_CLIENT_ID and WIZ_CLIENT_SECRET")
+      _skip(
+          "Wiz",
+          "set WIZ_MCP_URL to a Cloud Run wiz-mcp-server URL, or set "
+          "WIZ_MCP_TOKEN or WIZ_CLIENT_ID and WIZ_CLIENT_SECRET",
+      )
       return None
   return McpToolset(
       connection_params=_connection(cfg.wiz_mcp_url, cfg),

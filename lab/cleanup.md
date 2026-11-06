@@ -28,7 +28,7 @@ In the Gemini Enterprise app, disable the `ai_security_agent` registration and a
 ### 2. Delete Gemini Enterprise connectors and agent registrations
 
 - Delete the agent registration created from `agent/register_gemini_enterprise.md`.
-- Delete the custom MCP connector pointing at `codemender-mcp-server`.
+- Delete the custom MCP connector(s) pointing at `codemender-mcp-server` and `wiz-mcp-server`.
 - Delete the Data Insights data source configuration if it was added only for the lab.
 - In APIs & Services > Credentials, delete the OAuth 2.0 Web client used by the connector.
 
@@ -126,7 +126,7 @@ Each command should return nothing (or "Listed 0 items").
 
 ```bash
 gcloud run services list --region="$REGION" \
-  --filter="metadata.name:(codemender-mcp-server security-log-ingestion)"
+  --filter="metadata.name:(codemender-mcp-server wiz-mcp-server security-log-ingestion)"
 gcloud run jobs list --region="$REGION" --filter="metadata.name:codemender-sandbox"
 gcloud pubsub topics list --filter="name:security-logs"
 gcloud pubsub subscriptions list --filter="name:security-logs"
@@ -135,7 +135,7 @@ gcloud compute networks list --filter="name=sandbox-vpc"
 gcloud compute firewall-rules list --filter="name~^sandbox-"
 gcloud artifacts repositories list --location="$REGION" --filter="name~security-lab"
 gcloud secrets list --filter="name~(wiz-client-secret|github-mcp-pat|codemender-api-token)"
-SA_RE="codemender-mcp-sa|log-ingestion-sa|sandbox-runner-sa|pubsub-push-sa|github-actions-sa"
+SA_RE="codemender-mcp-sa|wiz-mcp-sa|log-ingestion-sa|sandbox-runner-sa|pubsub-push-sa|github-actions-sa"
 gcloud iam service-accounts list --filter="email~(${SA_RE})"
 # shows state DELETED for 30 days
 gcloud iam workload-identity-pools list --location=global --filter="name~github-pool"

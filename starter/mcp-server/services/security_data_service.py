@@ -358,7 +358,7 @@ class SecurityDataService:
         limit: int = 25,
     ) -> Dict[str, Any]:
         """Look up resource-to-repository mappings by resource ID or repository."""
-        # TODO(lab-07): Implement the BigQuery fallback used by trace_code_to_cloud when Wiz has no answer.
+        # TODO(lab-07): Implement the BigQuery lookup used by trace_code_to_cloud on codemender-mcp-server.
         #   1. If neither resource_id nor repository is given, return {"error": "Provide resource_id or repository."}.
         #   2. params = [_p("limit", "INT64", self._limit(limit))]; build an OR-joined where list.
         #   3. resource_id: must match RESOURCE_ID_RE (else {"error": "Invalid resource_id."});

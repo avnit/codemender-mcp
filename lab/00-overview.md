@@ -16,8 +16,8 @@
 
 By the end of the day you will have:
 
-1. Connected the Wiz, Cloud Logging, and GitHub remote MCP servers to an ADK agent, and seen how each one authenticates with Gemini Enterprise.
-2. Deployed the custom MCP server `codemender-mcp-server` on Cloud Run. It reads BigQuery, queries Wiz GraphQL, and starts sandbox runs.
+1. Connected the Wiz, Cloud Logging, and GitHub MCP servers to an ADK agent, and seen how each one authenticates with Gemini Enterprise.
+2. Deployed two dedicated Cloud Run MCP services: `codemender-mcp-server` (BigQuery security data, CodeMender findings, and sandbox execution) and `wiz-mcp-server` (Wiz OAuth + GraphQL security graph, exposure, excessive permissions, and code-to-cloud attribution).
 3. Deployed a validation sandbox: the Cloud Run Job `codemender-sandbox`, with no egress and no permissions.
 4. Built a log pipeline: Cloud Logging, then the sink `security-logs-to-pubsub`, then Pub/Sub `security-logs`, then `security-log-ingestion`, then BigQuery.
 5. Queried the security datasets with the Data Insights agent in Gemini Enterprise.
@@ -79,13 +79,14 @@ flowchart TB
     end
 
     subgraph Remote["Remote MCP servers"]
-        wiz["Wiz MCP - https://mcp.app.wiz.io"]
+        wizremote["Wiz vendor MCP (opt) - https://mcp.app.wiz.io"]
         logmcp["Cloud Logging MCP - https://logging.googleapis.com/mcp"]
         gh["GitHub MCP - https://api.githubcopilot.com/mcp/"]
     end
 
     subgraph Run["Cloud Run"]
         cm["codemender-mcp-server - SA codemender-mcp-sa"]
+        wizrun["wiz-mcp-server - SA wiz-mcp-sa"]
         ing["security-log-ingestion - SA log-ingestion-sa"]
         job["Job codemender-sandbox - gen2, SA sandbox-runner-sa"]
     end
@@ -115,12 +116,15 @@ flowchart TB
     scc["SCC continuous export"]
     sinks2["Sinks model-armor-to-bq, vpcsc-to-bq"]
     cmapi["CodeMender endpoint or mock mode"]
+    wizapi["Wiz GraphQL API"]
 
     app --> agent
-    agent --> wiz
+    agent --> wizrun
+    agent -.-> wizremote
     agent --> logmcp
     agent --> gh
     agent --> cm
+    wizrun --> wizapi
     gh --> repo
     repo --> scan
     repo --> val
@@ -156,14 +160,14 @@ flowchart TB
 sequenceDiagram
     actor U as Analyst
     participant A as ai_security_agent
-    participant W as Wiz MCP
+    participant W as wiz-mcp-server
     participant G as GitHub MCP
     participant C as codemender-mcp-server
     participant S as Cloud Run Job codemender-sandbox
     actor R as Human reviewer
 
     U->>A: Remediate wiz-issue-0001
-    A->>W: Get issue details and affected resource
+    A->>W: get_wiz_issue_details and wiz_trace_code_to_cloud
     W-->>A: Issue, resource, severity
     A->>C: trace_code_to_cloud and list_codemender_issues
     C-->>A: Repo payment-service, app/db.py, CM-0001
@@ -193,7 +197,7 @@ The lab takes 4 hours (240 minutes), including a setup check, two breaks and a b
 |---|---|---|---|
 | 0:00-0:10 | [Setup check](#setup-check-10-minutes) | 10m | Hands-on |
 | 0:10-0:20 | 00 Overview | 10m | Walkthrough |
-| 0:20-0:40 | [01 Wiz remote MCP](01-wiz-remote-mcp.md) | 20m | Hands-on |
+| 0:20-0:40 | [01 Wiz MCP](01-wiz-remote-mcp.md) | 20m | Hands-on |
 | 0:40-1:00 | [02 Cloud Logging remote MCP](02-cloud-logging-remote-mcp.md) | 20m | Hands-on |
 | 1:00-1:20 | [03 GitHub remote MCP](03-github-remote-mcp.md) | 20m | Hands-on |
 | 1:20-1:30 | Break | 10m | |
@@ -231,7 +235,7 @@ If any sign-in or tool fails, tell the facilitator now.
 
 ## Starter vs solution
 
-- The solution code is in the main directories: `mcp-server/`, `agent/`, `sandbox/`, `log-ingestion/`, `sample-app/`, `infra/terraform/`.
+- The solution code is in the main directories: `mcp-server/`, `wiz-mcp-server/`, `agent/`, `sandbox/`, `log-ingestion/`, `sample-app/`, `infra/terraform/`.
 - `starter/` has copies of selected files with `TODO` markers where you write the code yourself.
 - To work from the starter, copy the starter file over the solution file it maps to, then fill in the TODOs. The mapping table is in [facilitator-guide.md](facilitator-guide.md).
 - If you fall behind, restore the solution file with `git checkout -- <path>` and continue.
@@ -262,13 +266,15 @@ export SECURITY_LOGS_DATASET="security_logs"
 export WIZ_SECRET_NAME="wiz-client-secret"
 
 # Endpoints
-export WIZ_MCP_URL="https://mcp.app.wiz.io"
 export CLOUD_LOGGING_MCP_URL="https://logging.googleapis.com/mcp"
 export GITHUB_MCP_URL="https://api.githubcopilot.com/mcp/"
-# Resolves after mcp-server/deploy_cloud_run.sh has run (README quick start, step 4):
+# Resolves after mcp-server/deploy_cloud_run.sh and wiz-mcp-server/deploy_cloud_run.sh have run:
 CODEMENDER_SERVICE_URL="$(gcloud run services describe codemender-mcp-server \
   --region "$REGION" --format='value(status.url)' 2>/dev/null)"
 export CODEMENDER_MCP_URL="${CODEMENDER_SERVICE_URL}/mcp"
+WIZ_SERVICE_URL="$(gcloud run services describe wiz-mcp-server \
+  --region "$REGION" --format='value(status.url)' 2>/dev/null)"
+export WIZ_MCP_URL="${WIZ_SERVICE_URL:-https://mcp.app.wiz.io}${WIZ_SERVICE_URL:+/mcp}"
 ```
 
 Then:
@@ -282,7 +288,7 @@ echo "$GCP_PROJECT_ID $PROJECT_NUMBER $REGION"
 
 Expected: your project ID, a 12-digit project number, and `us-central1`.
 
-The agent reads its own settings from `agent/.env`. Copy `agent/.env.example` to `agent/.env` and set the same values there (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CODEMENDER_MCP_URL`, `GITHUB_ORG`, and so on).
+The agent reads its own settings from `agent/.env`. Copy `agent/.env.example` to `agent/.env` and set the same values there (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CODEMENDER_MCP_URL`, `WIZ_MCP_URL`, `GITHUB_ORG`, and so on).
 
 ## Check your work
 

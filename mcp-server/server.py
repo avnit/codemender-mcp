@@ -1,19 +1,21 @@
 import json
 import logging
-import os
 from typing import Any, Dict, Optional
 
+from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+from starlette.types import Receive, Scope, Send
 import uvicorn
-from mcp.server.fastmcp import FastMCP
 
 from config import settings
 from services.bigquery_service import BigQueryService
 from services.logging_service import LoggingService
-from services.wiz_service import WizService
-from services.security_data_service import SecurityDataService
 from services.sandbox_service import SandboxService
+from services.security_data_service import SecurityDataService
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +27,6 @@ logger = logging.getLogger("codemender-mcp-server")
 # Initialize services
 bq_service = BigQueryService()
 logging_service = LoggingService()
-wiz_service = WizService()
 security_data_service = SecurityDataService()
 sandbox_service = SandboxService()
 
@@ -36,16 +37,14 @@ mcp = FastMCP(
         "You have access to Google Cloud BigQuery and Cloud Logging tools to search, "
         "inspect, and triage security findings and automated remediation jobs generated "
         "by Code Mender. Use these tools to find issues, review generated patches, inspect "
-        "sandbox/execution logs, and diagnose remediation failures. You also have read-only "
-        "access to Wiz cloud security issues (toxic combinations, threat detections, and "
-        "cloud configuration findings) via the Wiz tools, including internet-facing "
-        "vulnerabilities (wiz_top_internet_facing_vulnerabilities) and identities with "
-        "admin or high privileges (wiz_excessive_permission_identities). "
-        "Use trace_code_to_cloud to map a Wiz issue or cloud resource to its container image "
-        "and source repository. Use query_scc_findings, query_model_armor_logs, "
-        "query_vpcsc_violations and query_security_events for read-only BigQuery views of "
-        "Security Command Center findings, Model Armor sanitize logs, VPC Service Controls "
-        "denials, and ingested security events. "
+        "sandbox/execution logs, and diagnose remediation failures. "
+        "Use trace_code_to_cloud to map a Code Mender finding, Wiz issue ID, or cloud resource "
+        "to its container image and source repository using BigQuery (code_to_cloud_map and "
+        "codemender.findings). Wiz cloud security posture tools are served by the separate "
+        "wiz-mcp-server Cloud Run service. "
+        "Use query_scc_findings, query_model_armor_logs, query_vpcsc_violations and "
+        "query_security_events for read-only BigQuery views of Security Command Center findings, "
+        "Model Armor sanitize logs, VPC Service Controls denials, and ingested security events. "
         "start_sandbox_validation is the only action tool: it runs the codemender-sandbox "
         "Cloud Run Job. Before calling it with confirmed=True, show the user the repository, "
         "commit, patch and issue and get explicit approval. Use get_sandbox_result to read "
@@ -249,166 +248,29 @@ def search_codemender_logs(
 
 
 # ============================================================================
-# MCP Tools: Wiz (Cloud Security Issues)
+# Lab tools: Code-to-cloud (BigQuery), security data, sandbox
 # ============================================================================
 
 @mcp.tool()
-def list_wiz_issues(
-    severity: Optional[str] = None,
-    status: Optional[str] = None,
-    issue_type: Optional[str] = None,
-    project_id: Optional[str] = None,
-    search_query: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    entity_id: Optional[str] = None,
-    limit: int = 25,
-    cursor: Optional[str] = None,
+def trace_code_to_cloud(
+    issue_id: Optional[str] = None,
+    resource_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """List and filter security issues from Wiz, newest first.
+    """Map an issue ID or cloud resource to its container image and source repository in BigQuery.
+
+    Resolves an issue ID (Code Mender finding_id, issue_id, or linked wiz_issue_id) through the
+    Code Mender findings table, then queries the BigQuery code_to_cloud_map table by resource_id
+    or repository. For live Wiz security graph resolution, also check wiz_trace_code_to_cloud on
+    the Wiz MCP server.
 
     Args:
-        severity: Comma-separated severities: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFORMATIONAL'.
-        status: Comma-separated statuses: 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'REJECTED'.
-        issue_type: Comma-separated types: 'TOXIC_COMBINATION', 'THREAT_DETECTION', 'CLOUD_CONFIGURATION'.
-        project_id: Comma-separated Wiz project IDs.
-        search_query: Free-text search across issues.
-        start_date: Issues created on or after this ISO timestamp (e.g. '2026-09-01T00:00:00Z').
-        end_date: Issues created on or before this ISO timestamp.
-        entity_id: Only issues related to this Wiz entity (resource) ID.
-        limit: Max issues to return (default: 25, max: 200).
-        cursor: Pagination cursor from a previous call's `next_cursor`.
-    """
-    return wiz_service.list_issues(
-        severity=severity,
-        status=status,
-        issue_type=issue_type,
-        project_id=project_id,
-        search_query=search_query,
-        start_date=start_date,
-        end_date=end_date,
-        entity_id=entity_id,
-        limit=limit,
-        cursor=cursor,
-    )
-
-
-@mcp.tool()
-def get_wiz_issue_details(issue_id: str) -> Dict[str, Any]:
-    """Retrieve full details for a single Wiz issue.
-
-    Returns the source rule/control (with description and remediation guidance),
-    the affected cloud resource, projects, linked service tickets, and notes.
-
-    Args:
-        issue_id: The Wiz issue ID.
-    """
-    return wiz_service.get_issue_details(issue_id=issue_id)
-
-
-@mcp.tool()
-def get_wiz_issues_summary(
-    status: Optional[str] = "OPEN,IN_PROGRESS",
-    project_id: Optional[str] = None,
-    issue_type: Optional[str] = None,
-    days: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Get counts of Wiz issues broken down by severity.
-
-    Args:
-        status: Comma-separated statuses to include (default: 'OPEN,IN_PROGRESS').
-        project_id: Optional comma-separated Wiz project IDs.
-        issue_type: Optional comma-separated issue types.
-        days: Optional lookback window in days (by creation date).
-    """
-    return wiz_service.get_issues_summary(
-        status=status, project_id=project_id, issue_type=issue_type, days=days
-    )
-
-
-@mcp.tool()
-def query_wiz_graphql(
-    query: str,
-    variables: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Execute a read-only GraphQL query against the Wiz API.
-
-    Mutations and subscriptions are rejected. Use this for data the other Wiz
-    tools don't cover (e.g. cloudResources, vulnerabilityFindings, projects).
-
-    Args:
-        query: GraphQL query document.
-        variables: Optional GraphQL variables.
-    """
-    return wiz_service.execute_read_query(query=query, variables=variables)
-
-
-# ============================================================================
-# Lab tools: Wiz posture, code-to-cloud, security data, sandbox
-# ============================================================================
-
-@mcp.tool()
-def wiz_top_internet_facing_vulnerabilities(
-    environment: Optional[str] = "production",
-    project: Optional[str] = None,
-    severity: Optional[str] = "CRITICAL",
-    limit: int = 5,
-) -> Dict[str, Any]:
-    """List the top open vulnerabilities on internet-exposed assets from Wiz (read-only).
-
-    Results are ranked by severity, CISA KEV exploit, known exploit, then score.
-
-    Args:
-        environment: Asset environment: 'production', 'staging', 'development', 'testing', 'other'.
-            Pass an empty string for all environments.
-        project: Optional Wiz project ID.
-        severity: Comma-separated severities (default 'CRITICAL').
-        limit: Number of vulnerabilities to return (default 5, max 50).
-    """
-    return wiz_service.top_internet_facing_vulnerabilities(
-        environment=environment, project=project, severity=severity, limit=limit
-    )
-
-
-@mcp.tool()
-def wiz_excessive_permission_identities(
-    service: Optional[str] = None,
-    project: Optional[str] = None,
-    limit: int = 25,
-) -> Dict[str, Any]:
-    """List identities (service accounts and users) Wiz flags with admin or high privileges (read-only).
-
-    Args:
-        service: Optional substring of the identity name, e.g. 'payment-service'.
-        project: Optional Wiz project ID (default: all projects).
-        limit: Max identities to return (default 25, max 100).
-    """
-    return wiz_service.excessive_permission_identities(service=service, project=project, limit=limit)
-
-
-@mcp.tool()
-def trace_code_to_cloud(issue_id: Optional[str] = None, resource_id: Optional[str] = None) -> Dict[str, Any]:
-    """Map a Wiz issue or cloud resource to its container image and source repository.
-
-    Asks Wiz first (image digest, image labels such as org.opencontainers.image.source,
-    repository fields). If Wiz is not configured, errors, or returns no repository, falls
-    back to the BigQuery code_to_cloud_map table (and the Code Mender findings table to
-    resolve an issue ID to a repository).
-
-    Args:
-        issue_id: Wiz issue ID (e.g. 'wiz-issue-0001') or Code Mender finding ID (e.g. 'CM-0003').
-        resource_id: Wiz resource ID or cloud provider resource ID
+        issue_id: Code Mender finding ID (e.g. 'CM-0003') or linked Wiz issue ID (e.g. 'wiz-issue-0001').
+        resource_id: Cloud provider resource ID
             (e.g. '//run.googleapis.com/projects/your-gcp-project-id/locations/us-central1/services/payment-service').
     """
     if not issue_id and not resource_id:
         return {"error": "Provide issue_id or resource_id."}
 
-    wiz_result = wiz_service.trace_code_to_cloud(issue_id=issue_id, resource_id=resource_id)
-    if wiz_result.get("found"):
-        return wiz_result
-
-    wiz_status = wiz_result.get("error") or wiz_result.get("reason") or "Wiz returned no repository."
-    lookup_resource = resource_id or (wiz_result.get("resource") or {}).get("provider_id")
     repository = None
     finding = None
     if issue_id and not resource_id:
@@ -417,27 +279,26 @@ def trace_code_to_cloud(issue_id: Optional[str] = None, resource_id: Optional[st
         if rows:
             finding = rows[0]
             repository = finding.get("repository")
-        elif finding_res.get("error") and not lookup_resource:
-            return {"source": "bigquery", "found": False, "wiz_status": wiz_status, "error": finding_res["error"]}
+        elif finding_res.get("error"):
+            return {"source": "bigquery", "found": False, "error": finding_res["error"]}
 
-    if not lookup_resource and not repository:
+    if not resource_id and not repository:
         return {
             "source": "bigquery",
             "found": False,
-            "wiz_status": wiz_status,
+            "issue_id": issue_id,
             "finding": finding,
             "mappings": [],
-            "message": "No resource or repository could be resolved for this issue.",
+            "message": "No resource or repository could be resolved for this issue in BigQuery.",
         }
 
-    bq_result = security_data_service.get_code_to_cloud(resource_id=lookup_resource, repository=repository)
+    bq_result = security_data_service.get_code_to_cloud(resource_id=resource_id, repository=repository)
     if bq_result.get("error"):
-        return {"source": "bigquery", "found": False, "wiz_status": wiz_status, "error": bq_result["error"]}
+        return {"source": "bigquery", "found": False, "error": bq_result["error"]}
     mappings = bq_result.get("data") or []
     return {
         "source": "bigquery",
         "found": bool(mappings),
-        "wiz_status": wiz_status,
         "issue_id": issue_id,
         "finding": finding,
         "filters_applied": bq_result.get("filters_applied"),
@@ -650,17 +511,6 @@ def resource_critical_issues() -> str:
     return json.dumps(issues, indent=2)
 
 
-@mcp.resource("wiz://critical-issues")
-def resource_wiz_critical_issues() -> str:
-    """Latest open CRITICAL issues from Wiz."""
-    issues = wiz_service.list_issues(
-        severity="CRITICAL",
-        status="OPEN,IN_PROGRESS",
-        limit=10,
-    )
-    return json.dumps(issues, indent=2)
-
-
 # ============================================================================
 # MCP Prompts
 # ============================================================================
@@ -694,39 +544,6 @@ def diagnose_remediation_failure(session_id: str) -> str:
     )
 
 
-@mcp.prompt()
-def triage_wiz_issue(issue_id: str) -> str:
-    """Prompt template for triaging a Wiz cloud security issue."""
-    return (
-        f"Please triage the Wiz issue '{issue_id}':\n"
-        f"1. Call `get_wiz_issue_details(issue_id='{issue_id}')` to retrieve the source rule, "
-        f"affected resource, projects, and remediation guidance.\n"
-        f"2. If the affected resource maps to a code repository, call `list_codemender_issues` "
-        f"with that repository to check for related Code Mender findings or patches.\n"
-        f"3. Assess exposure and impact based on the resource type, cloud platform, and severity.\n"
-        f"4. Provide a concise summary with root cause, risk, and recommended remediation steps."
-    )
-
-
-@mcp.prompt()
-def remediate_wiz_issue(issue_id: str) -> str:
-    """Prompt template for taking a Wiz issue from triage to a validated patch and PR."""
-    return (
-        f"Remediate the Wiz issue '{issue_id}':\n"
-        f"1. Call `get_wiz_issue_details(issue_id='{issue_id}')` to get the rule, affected resource and severity.\n"
-        f"2. Call `trace_code_to_cloud(issue_id='{issue_id}')` to find the container image and source repository.\n"
-        f"3. Call `list_codemender_issues(repository=<repository>)` and `get_issue_details` to find the "
-        f"matching Code Mender finding and its patch. Note the finding ID and commit SHA.\n"
-        f"4. Explain the root cause and the proposed patch to the user.\n"
-        f"5. Call `start_sandbox_validation` with confirmed=False to show the planned run. Ask the user "
-        f"for explicit approval. Only after the user approves, call it again with confirmed=True.\n"
-        f"6. Call `get_sandbox_result(run_id=<run_id>)` until a verdict is available. Report poc_before, "
-        f"poc_after, unit test results and the verdict.\n"
-        f"7. If the verdict is PATCH_VERIFIED, offer to open a pull request with the patch, the sandbox "
-        f"verdict and a link to the Wiz issue. Ask before creating it. Never merge; a human reviewer approves the PR."
-    )
-
-
 # Disable DNS rebinding protection so Cloud Run hostnames (*.run.app) and internal proxies are allowed
 mcp.settings.transport_security.enable_dns_rebinding_protection = False
 
@@ -744,7 +561,6 @@ async def health_check(request: Request) -> Response:
             "project": bq_service.project_id or "auto-detected",
             "dataset": bq_service.dataset,
             "table": bq_service.table,
-            "wiz_configured": wiz_service.is_configured,
         }
     )
 
@@ -754,7 +570,7 @@ async def root_info(request: Request) -> Response:
     return JSONResponse(
         {
             "service": "Code Mender MCP Server",
-            "description": "Model Context Protocol server for Code Mender, Wiz, Cloud Logging, BigQuery security data and the sandbox Cloud Run Job.",
+            "description": "Model Context Protocol server on Cloud Run for Code Mender findings, Cloud Logging, BigQuery security data, and the codemender-sandbox Cloud Run Job.",
             "mcp_streamable_endpoint": "/mcp",
             "mcp_sse_endpoint": "/sse",
             "mcp_messages_endpoint": "/messages",
@@ -767,12 +583,6 @@ async def root_info(request: Request) -> Response:
                 "query_codemender_bigquery",
                 "get_issue_logs",
                 "search_codemender_logs",
-                "list_wiz_issues",
-                "get_wiz_issue_details",
-                "get_wiz_issues_summary",
-                "query_wiz_graphql",
-                "wiz_top_internet_facing_vulnerabilities",
-                "wiz_excessive_permission_identities",
                 "trace_code_to_cloud",
                 "query_scc_findings",
                 "query_model_armor_logs",
@@ -784,8 +594,6 @@ async def root_info(request: Request) -> Response:
             "prompts": [
                 "triage_issue",
                 "diagnose_remediation_failure",
-                "triage_wiz_issue",
-                "remediate_wiz_issue",
             ],
         }
     )
@@ -795,10 +603,11 @@ async def root_info(request: Request) -> Response:
 # Multi-Transport ASGI Application Setup (Streamable HTTP + SSE)
 # ============================================================================
 
-from starlette.types import Scope, Receive, Send
-from starlette.routing import Route
-from starlette.applications import Starlette
-from starlette.middleware.cors import CORSMiddleware
+_SECURITY_HEADERS = (
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
+    (b"cache-control", b"no-store"),
+)
 
 
 class MCPCompatibilityMiddleware:
@@ -808,11 +617,20 @@ class MCPCompatibilityMiddleware:
     3. Handles HEAD requests with 200 OK.
     4. Normalizes Accept headers to satisfy FastMCP Streamable HTTP requirements
        ('application/json, text/event-stream').
+    5. Adds baseline HTTP security headers (nosniff, DENY, no-store).
     """
     def __init__(self, inner_app):
         self.inner_app = inner_app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        async def send_with_security_headers(message):
+            if message["type"] == "http.response.start":
+                existing = {k.lower() for k, _ in message.get("headers", [])}
+                extra = [(k, v) for k, v in _SECURITY_HEADERS if k not in existing]
+                if extra:
+                    message = {**message, "headers": list(message.get("headers", [])) + extra}
+            await send(message)
+
         if scope["type"] == "http":
             method = scope.get("method", "")
 
@@ -826,7 +644,7 @@ class MCPCompatibilityMiddleware:
                         "Access-Control-Allow-Headers": "*",
                     },
                 )
-                await response(scope, receive, send)
+                await response(scope, receive, send_with_security_headers)
                 return
 
             # Handle explicit session termination DELETE requests gracefully
@@ -836,13 +654,13 @@ class MCPCompatibilityMiddleware:
                     status_code=200,
                     headers={"Access-Control-Allow-Origin": "*"},
                 )
-                await response(scope, receive, send)
+                await response(scope, receive, send_with_security_headers)
                 return
 
             # Handle HEAD probes gracefully
             if method == "HEAD":
                 response = Response(status_code=200, headers={"Access-Control-Allow-Origin": "*"})
-                await response(scope, receive, send)
+                await response(scope, receive, send_with_security_headers)
                 return
 
             # Normalize Accept header so clients sending */* or application/json do not receive 406
@@ -853,7 +671,7 @@ class MCPCompatibilityMiddleware:
                 new_headers.append((b"accept", b"application/json, text/event-stream"))
                 scope["headers"] = new_headers
 
-        await self.inner_app(scope, receive, send)
+        await self.inner_app(scope, receive, send_with_security_headers)
 
 
 def create_app() -> Any:

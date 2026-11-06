@@ -17,8 +17,8 @@ description: Triage a single security alert or finding (Wiz issue, CodeMender fi
 7. Propose the next step: investigate further, run root-cause-and-patch, mark false positive (human decision), or no action.
 
 ## Tools
-- CodeMender MCP: `get_issue_details`, `list_codemender_issues`, `trace_code_to_cloud`, `query_security_events`, `query_scc_findings`.
-- Wiz MCP: issue details and graph queries; CodeMender MCP `get_wiz_issue_details` as fallback.
+- CodeMender MCP (`codemender-mcp-server`): `get_issue_details`, `list_codemender_issues`, `trace_code_to_cloud`, `query_security_events`, `query_scc_findings`.
+- Wiz MCP (`wiz-mcp-server`): `get_wiz_issue_details`, `list_wiz_issues`, `wiz_trace_code_to_cloud`, `query_wiz_graphql`.
 - Cloud Logging MCP: `list_log_entries`.
 
 ## Output format

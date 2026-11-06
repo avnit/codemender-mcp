@@ -63,11 +63,32 @@ FORWARDED_ENV = [
 
 # Secrets: pass as Secret Manager references, never as plain env values.
 # Agent Engine supports {"secret": "<name>", "version": "latest"} env values
-# (confirm in your environment).
+# (confirm in your environment). When WIZ_MCP_URL points at the Cloud Run
+# wiz-mcp-server (*.run.app), wiz-mcp-server holds wiz-client-secret itself and
+# Agent Engine authenticates via Google ID token.
 SECRET_ENV = {
     "WIZ_CLIENT_SECRET": "wiz-client-secret",
     "GITHUB_PAT": "github-mcp-pat",
 }
+
+PLACEHOLDER_MARKERS = ("REPLACE_ME", "your-", "XXXX")
+
+
+def _is_set(value: str | None) -> bool:
+  if not value or not value.strip():
+    return False
+  return not any(marker in value for marker in PLACEHOLDER_MARKERS)
+
+
+def _uses_cloud_run_wiz_mcp(env) -> bool:
+  from urllib.parse import urlsplit
+
+  url = (env.get("WIZ_MCP_URL") or "").strip()
+  if not _is_set(url):
+    return False
+  parts = urlsplit(url)
+  host = (parts.hostname or "").lower()
+  return parts.scheme.lower() == "https" and host.endswith(".run.app")
 
 
 def load_dotenv(path: Path) -> None:
@@ -84,9 +105,19 @@ def load_dotenv(path: Path) -> None:
 
 def build_config(env=None) -> dict:
   e = os.environ if env is None else env
-  env_vars = {k: e[k] for k in FORWARDED_ENV if e.get(k)}
-  for key, secret in SECRET_ENV.items():
-    env_vars[key] = {"secret": secret, "version": "latest"}
+  env_vars = {
+      k: e[k]
+      for k in FORWARDED_ENV
+      if _is_set(e.get(k))
+  }
+  env_vars["GITHUB_PAT"] = {"secret": SECRET_ENV["GITHUB_PAT"], "version": "latest"}
+  if not _uses_cloud_run_wiz_mcp(e) and (
+      _is_set(e.get("WIZ_CLIENT_ID")) or _is_set(e.get("WIZ_CLIENT_SECRET"))
+  ):
+    env_vars["WIZ_CLIENT_SECRET"] = {
+        "secret": SECRET_ENV["WIZ_CLIENT_SECRET"],
+        "version": "latest",
+    }
   return {
       "project": e.get("GOOGLE_CLOUD_PROJECT", "your-gcp-project-id"),
       "location": e.get("GOOGLE_CLOUD_LOCATION", "us-central1"),

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" width="1200" height="820" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
   <title id="title">AI Security Agent Lab architecture</title>
-  <desc id="desc">An analyst uses the Gemini Enterprise app, which hosts the ADK agent ai_security_agent on Agent Engine and the Data Insights agent. The agent calls four MCP servers: Wiz remote MCP, Cloud Logging remote MCP, GitHub remote MCP, and codemender-mcp-server on Cloud Run. The custom server reads BigQuery, queries the Wiz GraphQL API and starts the sandbox Cloud Run Job, which reads its inputs from a GCS bucket and has no egress. GitHub Actions in the payment-service repo run the scan and sandbox validation. Logs flow from Cloud Logging through a sink and Pub/Sub to security-log-ingestion and into BigQuery. SCC export and Model Armor and VPC SC sinks also write to BigQuery.</desc>
+  <desc id="desc">An analyst uses the Gemini Enterprise app, which hosts the ADK agent ai_security_agent on Agent Engine and the Data Insights agent. The agent calls four MCP servers: Cloud Logging remote MCP, GitHub remote MCP, wiz-mcp-server on Cloud Run (or Wiz vendor remote MCP), and codemender-mcp-server on Cloud Run. wiz-mcp-server queries the Wiz GraphQL API. codemender-mcp-server reads BigQuery and starts the sandbox Cloud Run Job, which reads its inputs from a GCS bucket and has no egress. GitHub Actions in the payment-service repo run the scan and sandbox validation. Logs flow from Cloud Logging through a sink and Pub/Sub to security-log-ingestion and into BigQuery. SCC export and Model Armor and VPC SC sinks also write to BigQuery.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
@@ -42,7 +42,7 @@
 
   <!-- Security sources zone -->
   <rect x="690" y="60" width="220" height="50" rx="6" fill="#ffffff" stroke="#e8710a" stroke-width="1.5"/>
-  <text x="800" y="81" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">Wiz remote MCP</text>
+  <text x="800" y="81" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">Wiz vendor MCP (opt)</text>
   <text x="800" y="99" font-size="12" text-anchor="middle" fill="#3c4043">mcp.app.wiz.io</text>
 
   <rect x="940" y="60" width="220" height="50" rx="6" fill="#ffffff" stroke="#e8710a" stroke-width="1.5"/>
@@ -65,13 +65,17 @@
   <text x="965" y="412" font-size="12" text-anchor="middle" fill="#3c4043">codemender-scan.yml, sandbox-validate.yml</text>
 
   <!-- Google Cloud zone -->
-  <rect x="40" y="280" width="250" height="50" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
-  <text x="165" y="301" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">Cloud Logging remote MCP</text>
-  <text x="165" y="319" font-size="12" text-anchor="middle" fill="#3c4043">logging.googleapis.com/mcp</text>
+  <rect x="40" y="280" width="185" height="50" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="132" y="301" font-size="12" font-weight="bold" text-anchor="middle" fill="#202124">Cloud Logging MCP</text>
+  <text x="132" y="319" font-size="11" text-anchor="middle" fill="#3c4043">logging.googleapis.com/mcp</text>
 
-  <rect x="330" y="280" width="290" height="50" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
-  <text x="475" y="301" font-size="13" font-weight="bold" text-anchor="middle" fill="#202124">codemender-mcp-server</text>
-  <text x="475" y="319" font-size="12" text-anchor="middle" fill="#3c4043">Cloud Run, custom MCP server</text>
+  <rect x="240" y="280" width="185" height="50" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="332" y="301" font-size="12" font-weight="bold" text-anchor="middle" fill="#202124">codemender-mcp-server</text>
+  <text x="332" y="319" font-size="11" text-anchor="middle" fill="#3c4043">Cloud Run (CodeMender MCP)</text>
+
+  <rect x="440" y="280" width="180" height="50" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
+  <text x="530" y="301" font-size="12" font-weight="bold" text-anchor="middle" fill="#202124">wiz-mcp-server</text>
+  <text x="530" y="319" font-size="11" text-anchor="middle" fill="#3c4043">Cloud Run (Wiz MCP)</text>
 
   <rect x="40" y="400" width="250" height="56" rx="6" fill="#ffffff" stroke="#188038" stroke-width="1.5"/>
   <text x="165" y="423" font-size="13" text-anchor="middle" fill="#202124">GCS inputs bucket</text>
@@ -114,17 +118,18 @@
     <line x1="130" y1="115" x2="168" y2="115"/>
     <line x1="320" y1="105" x2="348" y2="90"/>
     <line x1="320" y1="125" x2="348" y2="155"/>
-    <!-- Agent to the four MCP servers -->
+    <!-- Agent to the MCP servers -->
     <line x1="620" y1="85" x2="688" y2="85"/>
     <polyline points="620,108 655,108 655,232 760,232 760,278"/>
-    <line x1="400" y1="116" x2="200" y2="278"/>
-    <polyline points="350,70 338,70 338,278"/>
+    <line x1="400" y1="116" x2="150" y2="278"/>
+    <polyline points="350,70 332,70 332,278"/>
+    <line x1="530" y1="116" x2="530" y2="278"/>
     <!-- Data Insights to BigQuery -->
     <polyline points="370,184 370,226 28,226 28,560 38,560"/>
-    <!-- codemender-mcp-server to BigQuery, Wiz GraphQL, sandbox job -->
-    <line x1="345" y1="330" x2="282" y2="538"/>
+    <!-- codemender-mcp-server to BigQuery and sandbox job; wiz-mcp-server to Wiz GraphQL -->
+    <line x1="290" y1="330" x2="250" y2="538"/>
     <polyline points="620,300 648,300 648,224 1172,224 1172,85 1162,85"/>
-    <line x1="475" y1="330" x2="475" y2="398"/>
+    <line x1="370" y1="330" x2="430" y2="398"/>
     <!-- GitHub: MCP to repo, repo to Actions -->
     <line x1="910" y1="295" x2="938" y2="295"/>
     <line x1="1050" y1="330" x2="1010" y2="368"/>

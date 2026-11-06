@@ -15,20 +15,20 @@ description: Choose the right source and tool (Wiz MCP, Cloud Logging MCP, GitHu
 
 | Question type | Primary source | Tool | Fallback |
 |---|---|---|---|
-| Top critical internet-facing vulnerabilities in production | CodeMender MCP (Wiz helper) | `wiz_top_internet_facing_vulnerabilities(environment="production", severity="CRITICAL", limit=5)` | Wiz MCP issue search |
-| Identities with excessive permissions | CodeMender MCP (Wiz helper) | `wiz_excessive_permission_identities(service=..., project=...)` | Wiz MCP graph query |
-| Any Wiz issue detail or graph question | Wiz MCP | Wiz MCP tools | `get_wiz_issue_details`, `query_wiz_graphql` |
+| Top critical internet-facing vulnerabilities in production | Wiz MCP (`wiz-mcp-server`) | `wiz_top_internet_facing_vulnerabilities(environment="production", severity="CRITICAL", limit=5)` | `list_wiz_issues(severity="CRITICAL")` |
+| Identities with excessive permissions | Wiz MCP (`wiz-mcp-server`) | `wiz_excessive_permission_identities(service=..., project=...)` | `query_wiz_graphql` |
+| Any Wiz issue detail or graph question | Wiz MCP (`wiz-mcp-server`) | `list_wiz_issues`, `get_wiz_issue_details`, `get_wiz_issues_summary`, `query_wiz_graphql` | `query_codemender_bigquery` on `codemender.findings` (`wiz_issue_id`) |
 | Who changed IAM, when, from where | Cloud Logging MCP | `list_log_entries` with filter `protoPayload.methodName="SetIamPolicy"` | `query_security_events(event_type="IAM_POLICY_CHANGE")` |
 | Which logs exist in the project | Cloud Logging MCP | `list_log_names` | none |
-| What did CodeMender find | CodeMender MCP | `list_codemender_issues`, `get_issue_details`, `get_issues_summary` | `query_codemender_bigquery` |
-| CodeMender log lines for an issue | CodeMender MCP | `get_issue_logs`, `search_codemender_logs` | Cloud Logging `list_log_entries` with `logName:"logs/codemender"` |
-| SCC findings | CodeMender MCP | `query_scc_findings` | GE Data Insights agent on `scc_export.findings` |
-| Model Armor blocks or matches | CodeMender MCP | `query_model_armor_logs` | Data Insights agent on `security_logs` |
-| VPC Service Controls violations | CodeMender MCP | `query_vpcsc_violations` | Data Insights agent on `security_logs` |
-| Security event timeline (scans, patches, sandbox, IAM) | CodeMender MCP | `query_security_events` | Data Insights agent on `security_lab.security_events` |
-| Which repo/commit built this cloud resource | CodeMender MCP | `trace_code_to_cloud(resource_id=...)` | Wiz MCP code-to-cloud |
+| What did CodeMender find | CodeMender MCP (`codemender-mcp-server`) | `list_codemender_issues`, `get_issue_details`, `get_issues_summary` | `query_codemender_bigquery` |
+| CodeMender log lines for an issue | CodeMender MCP (`codemender-mcp-server`) | `get_issue_logs`, `search_codemender_logs` | Cloud Logging `list_log_entries` with `logName:"logs/codemender"` |
+| SCC findings | CodeMender MCP (`codemender-mcp-server`) | `query_scc_findings` | GE Data Insights agent on `scc_export.findings` |
+| Model Armor blocks or matches | CodeMender MCP (`codemender-mcp-server`) | `query_model_armor_logs` | Data Insights agent on `security_logs` |
+| VPC Service Controls violations | CodeMender MCP (`codemender-mcp-server`) | `query_vpcsc_violations` | Data Insights agent on `security_logs` |
+| Security event timeline (scans, patches, sandbox, IAM) | CodeMender MCP (`codemender-mcp-server`) | `query_security_events` | Data Insights agent on `security_lab.security_events` |
+| Which repo/commit built this cloud resource | Wiz MCP / CodeMender MCP | `wiz_trace_code_to_cloud` (Wiz MCP) or `trace_code_to_cloud` (CodeMender MCP BigQuery map) | `trace_code_to_cloud(resource_id=...)` on `security_lab.code_to_cloud_map` |
 | Show the vulnerable code | GitHub MCP | `get_file_contents` | none |
-| Did the patch work | CodeMender MCP | `get_sandbox_result(run_id=...)` | `query_security_events(event_type="SANDBOX_RESULT")` |
+| Did the patch work | CodeMender MCP (`codemender-mcp-server`) | `get_sandbox_result(run_id=...)` | `query_security_events(event_type="SANDBOX_RESULT")` |
 | Trend or aggregate questions across tables | GE Data Insights agent | natural-language question | bigquery-data-insights SQL |
 
 ## Tools
