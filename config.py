@@ -16,6 +16,10 @@ class Settings(BaseSettings):
         default=os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID"),
         description="GCP Project ID. Defaults to GOOGLE_CLOUD_PROJECT env var or ADC."
     )
+    gcp_region: str = Field(
+        default=os.getenv("GCP_REGION", "us-central1"),
+        description="GCP region for Cloud Run Job dispatch and transit storage."
+    )
 
     # BigQuery Configuration for Code Mender findings
     bq_dataset: str = Field(
@@ -25,6 +29,54 @@ class Settings(BaseSettings):
     bq_table: str = Field(
         default=os.getenv("BQ_TABLE", "findings"),
         description="BigQuery table containing Code Mender findings."
+    )
+    bq_location: str = Field(
+        default=os.getenv("BQ_LOCATION", "US"),
+        description="BigQuery dataset location."
+    )
+
+    # Cloud Run Job & GCS Transit Runner Configuration
+    cm_runner_job_name: str = Field(
+        default=os.getenv("CM_RUNNER_JOB_NAME", "codemender-runner"),
+        description="Name of the sandboxed cm-runner Cloud Run Job to execute for find/verify/fix."
+    )
+    cm_reports_bucket: Optional[str] = Field(
+        default=os.getenv("CM_REPORTS_BUCKET"),
+        description="GCS transit bucket for code snapshots, manifests, and receipts."
+    )
+    cm_work_dir: str = Field(
+        default=os.getenv("CM_WORK_DIR", "/tmp/cm-mcp"),
+        description="Local scratch directory for git clones and tarballs."
+    )
+    cm_default_patch_mode: str = Field(
+        default=os.getenv("CM_DEFAULT_PATCH_MODE", "pr"),
+        description="Default patch mode for cm_fix ('pr', 'branch', or 'none')."
+    )
+    cm_poll_interval_seconds: int = Field(
+        default=int(os.getenv("CM_POLL_INTERVAL_SECONDS", "20")),
+        description="Polling interval in seconds for job completion."
+    )
+    cm_job_watch_timeout_seconds: int = Field(
+        default=int(os.getenv("CM_JOB_WATCH_TIMEOUT_SECONDS", "14400")),
+        description="Max seconds to watch a running job (default: 4 hours)."
+    )
+
+    # GitHub integration
+    github_token: Optional[str] = Field(
+        default=os.getenv("GITHUB_TOKEN"),
+        description="GitHub token used to clone repos, push fix branches, and open pull requests."
+    )
+    github_api_url: str = Field(
+        default=os.getenv("GITHUB_API_URL", "https://api.github.com"),
+        description="GitHub REST API base URL."
+    )
+    git_author_name: str = Field(
+        default=os.getenv("GIT_AUTHOR_NAME", "CodeMender Bot"),
+        description="Git author name for patch commits."
+    )
+    git_author_email: str = Field(
+        default=os.getenv("GIT_AUTHOR_EMAIL", "codemender-bot@users.noreply.github.com"),
+        description="Git author email for patch commits."
     )
 
     # Cloud Logging Configuration

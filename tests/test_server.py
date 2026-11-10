@@ -8,7 +8,18 @@ from starlette.testclient import TestClient
 from services.bigquery_service import BigQueryService, serialize_bq_val
 from services.logging_service import LoggingService, format_log_entry
 from services.wiz_service import WizService
-from server import app
+from services.runner_service import runner_manager
+from services.runner.service import ServiceError
+from server import (
+    app,
+    cm_find,
+    cm_validate,
+    cm_fix,
+    cm_apply_patch,
+    cm_job_status,
+    cm_list_findings,
+    cm_get_finding,
+)
 
 
 class TestSerialization(unittest.TestCase):
@@ -280,6 +291,7 @@ class TestHttpEndpoints(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["status"], "healthy")
         self.assertEqual(data["service"], "codemender-mcp-server")
+        self.assertIn("runner_configured", data)
 
     def test_root_endpoint(self):
         response = self.client.get("/")
@@ -287,6 +299,8 @@ class TestHttpEndpoints(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["service"], "Code Mender MCP Server")
         self.assertIn("/mcp", data["mcp_streamable_endpoint"])
+        self.assertIn("cm_find", data["tools"])
+        self.assertIn("cm_fix", data["tools"])
 
     def test_mcp_streamable_http(self):
         payload = {
@@ -346,6 +360,80 @@ class TestHttpEndpoints(unittest.TestCase):
         self.assertIn("list_codemender_issues", res.text)
         self.assertIn("list_wiz_issues", res.text)
         self.assertIn("get_wiz_issue_details", res.text)
+        self.assertIn("cm_find", res.text)
+        self.assertIn("cm_validate", res.text)
+        self.assertIn("cm_fix", res.text)
+        self.assertIn("cm_apply_patch", res.text)
+        self.assertIn("cm_job_status", res.text)
+        self.assertIn("cm_list_findings", res.text)
+        self.assertIn("cm_get_finding", res.text)
+
+
+class TestRunnerTools(unittest.TestCase):
+    def setUp(self):
+        self.mock_service = MagicMock()
+        runner_manager.set_service(self.mock_service)
+
+    def tearDown(self):
+        runner_manager._service = None
+
+    def test_cm_find(self):
+        self.mock_service.start_find.return_value = {"job_id": "find-123", "status": "STAGING"}
+        res = cm_find(repo="owner/repo", ref="main")
+        self.mock_service.start_find.assert_called_once_with("owner/repo", "main")
+        self.assertEqual(res["job_id"], "find-123")
+
+    def test_cm_find_with_wait(self):
+        self.mock_service.start_find.return_value = {"job_id": "find-123", "status": "STAGING"}
+        self.mock_service.job_status.return_value = {"job_id": "find-123", "status": "SUCCEEDED"}
+        res = cm_find(repo="owner/repo", ref="main", wait_seconds=30)
+        self.mock_service.start_find.assert_called_once_with("owner/repo", "main")
+        self.mock_service.job_status.assert_called_once_with("find-123", 30)
+        self.assertEqual(res["status"], "SUCCEEDED")
+
+    def test_cm_validate(self):
+        self.mock_service.start_validate.return_value = {"job_id": "validate-456", "status": "STAGING"}
+        res = cm_validate(finding_id="f-001")
+        self.mock_service.start_validate.assert_called_once_with("f-001")
+        self.assertEqual(res["job_id"], "validate-456")
+
+    def test_cm_fix(self):
+        self.mock_service.start_fix.return_value = {"job_id": "fix-789", "status": "STAGING"}
+        res = cm_fix(finding_id="f-001", patch_mode="pr")
+        self.mock_service.start_fix.assert_called_once_with("f-001", "pr")
+        self.assertEqual(res["job_id"], "fix-789")
+
+    def test_cm_apply_patch(self):
+        self.mock_service.apply_patch.return_value = {"pr_url": "https://github.com/owner/repo/pull/1"}
+        res = cm_apply_patch(finding_id="f-001", patch_mode="pr")
+        self.mock_service.apply_patch.assert_called_once_with("f-001", "pr")
+        self.assertEqual(res["pr_url"], "https://github.com/owner/repo/pull/1")
+
+    def test_cm_job_status(self):
+        self.mock_service.job_status.return_value = {"job_id": "fix-789", "status": "SUCCEEDED"}
+        res = cm_job_status(job_id="fix-789", wait_seconds=10)
+        self.mock_service.job_status.assert_called_once_with("fix-789", 10)
+        self.assertEqual(res["status"], "SUCCEEDED")
+
+    def test_cm_list_findings(self):
+        self.mock_service.list_findings.return_value = [{"finding_id": "f-001", "title": "SQLi"}]
+        res = cm_list_findings(repo="owner/repo", status="OPEN", scan_job_id="find-123", limit=50)
+        self.mock_service.list_findings.assert_called_once_with(
+            repo="owner/repo", status="OPEN", scan_job_id="find-123", limit=50
+        )
+        self.assertEqual(len(res["findings"]), 1)
+        self.assertEqual(res["findings"][0]["finding_id"], "f-001")
+
+    def test_cm_get_finding(self):
+        self.mock_service.get_finding.return_value = {"finding_id": "f-001", "title": "SQLi"}
+        res = cm_get_finding(finding_id="f-001", include_sarif=True)
+        self.mock_service.get_finding.assert_called_once_with("f-001", True)
+        self.assertEqual(res["finding_id"], "f-001")
+
+    def test_error_handling(self):
+        self.mock_service.start_find.side_effect = ServiceError("Service failed")
+        res = cm_find(repo="bad/repo")
+        self.assertEqual(res, {"error": "Service failed"})
 
 
 if __name__ == "__main__":

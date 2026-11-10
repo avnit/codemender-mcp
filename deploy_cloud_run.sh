@@ -37,6 +37,14 @@ ALLOW_UNAUTHENTICATED="${ALLOW_UNAUTHENTICATED:-false}"
 BUILD_SERVICE_ACCOUNT="${BUILD_SERVICE_ACCOUNT:-}"
 LOG_NAME_FILTER="${LOG_NAME_FILTER:-codemender}"
 
+# Code Mender Runner Execution
+CM_RUNNER_JOB_NAME="${CM_RUNNER_JOB_NAME:-codemender-runner}"
+CM_REPORTS_BUCKET="${CM_REPORTS_BUCKET:-}"
+CM_DEFAULT_PATCH_MODE="${CM_DEFAULT_PATCH_MODE:-pr}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"
+GITHUB_SECRET_NAME="${GITHUB_SECRET_NAME:-github-token}"
+
 # Wiz (optional). WIZ_CLIENT_SECRET is stored in Secret Manager, never as a plain env var.
 WIZ_CLIENT_ID="${WIZ_CLIENT_ID:-}"
 WIZ_CLIENT_SECRET="${WIZ_CLIENT_SECRET:-}"
@@ -137,6 +145,7 @@ gcloud services enable \
   run.googleapis.com \
   bigquery.googleapis.com \
   logging.googleapis.com \
+  storage.googleapis.com \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
   --project="${PROJECT_ID}"
@@ -154,11 +163,13 @@ else
 fi
 
 # 3. Grant IAM roles (least privilege)
-echo -e "${YELLOW}==> [3/5] Assigning BigQuery and Cloud Logging IAM permissions...${RESET}"
+echo -e "${YELLOW}==> [3/5] Assigning BigQuery, Cloud Logging, Cloud Run, and Storage IAM permissions...${RESET}"
 IAM_ROLES=(
-  "roles/bigquery.dataViewer"
+  "roles/bigquery.dataEditor"
   "roles/bigquery.jobUser"
   "roles/logging.viewer"
+  "roles/storage.objectUser"
+  "roles/run.developer"
 )
 
 for ROLE in "${IAM_ROLES[@]}"; do
@@ -190,8 +201,12 @@ if [[ -n "${BUILD_SERVICE_ACCOUNT}" ]]; then
 fi
 
 # Runtime environment variables
-ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID},BQ_DATASET=${BQ_DATASET},BQ_TABLE=${BQ_TABLE},LOG_NAME_FILTER=${LOG_NAME_FILTER}"
-SECRETS_FLAG=""
+ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID},BQ_DATASET=${BQ_DATASET},BQ_TABLE=${BQ_TABLE},LOG_NAME_FILTER=${LOG_NAME_FILTER},CM_RUNNER_JOB_NAME=${CM_RUNNER_JOB_NAME},CM_DEFAULT_PATCH_MODE=${CM_DEFAULT_PATCH_MODE},GITHUB_API_URL=${GITHUB_API_URL}"
+if [[ -n "${CM_REPORTS_BUCKET}" ]]; then
+  ENV_VARS="${ENV_VARS},CM_REPORTS_BUCKET=${CM_REPORTS_BUCKET}"
+fi
+
+SECRETS=()
 
 # Wiz: store the client secret in Secret Manager and mount it as WIZ_CLIENT_SECRET
 if [[ -n "${WIZ_CLIENT_ID}" && -n "${WIZ_CLIENT_SECRET}" && -n "${WIZ_API_ENDPOINT}" ]]; then
@@ -224,9 +239,50 @@ if [[ -n "${WIZ_CLIENT_ID}" && -n "${WIZ_CLIENT_SECRET}" && -n "${WIZ_API_ENDPOI
     --quiet >/dev/null
 
   ENV_VARS="${ENV_VARS},WIZ_CLIENT_ID=${WIZ_CLIENT_ID},WIZ_API_ENDPOINT=${WIZ_API_ENDPOINT},WIZ_AUTH_URL=${WIZ_AUTH_URL},WIZ_AUDIENCE=${WIZ_AUDIENCE}"
-  SECRETS_FLAG="--set-secrets=WIZ_CLIENT_SECRET=${WIZ_SECRET_NAME}:latest"
+  SECRETS+=("WIZ_CLIENT_SECRET=${WIZ_SECRET_NAME}:latest")
 else
   echo "    Wiz integration not configured; skipping Wiz setup."
+fi
+
+# GitHub Token for Code Mender auto-fix PRs and repo cloning
+if [[ -n "${GITHUB_TOKEN}" ]]; then
+  echo -e "${YELLOW}==> Configuring GitHub Token (Secret Manager: ${GITHUB_SECRET_NAME})...${RESET}"
+  gcloud services enable secretmanager.googleapis.com --project="${PROJECT_ID}"
+
+  if ! gcloud secrets describe "${GITHUB_SECRET_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+    printf '%s' "${GITHUB_TOKEN}" | gcloud secrets create "${GITHUB_SECRET_NAME}" \
+      --data-file=- \
+      --replication-policy=automatic \
+      --project="${PROJECT_ID}" >/dev/null
+    echo -e "${GREEN}    Created secret ${GITHUB_SECRET_NAME}.${RESET}"
+  else
+    CURRENT_GH_TOKEN=$(gcloud secrets versions access latest --secret="${GITHUB_SECRET_NAME}" --project="${PROJECT_ID}" 2>/dev/null || echo "")
+    if [[ "${CURRENT_GH_TOKEN}" != "${GITHUB_TOKEN}" ]]; then
+      printf '%s' "${GITHUB_TOKEN}" | gcloud secrets versions add "${GITHUB_SECRET_NAME}" \
+        --data-file=- \
+        --project="${PROJECT_ID}" >/dev/null
+      echo -e "${GREEN}    Added new version of secret ${GITHUB_SECRET_NAME}.${RESET}"
+    else
+      echo "    Secret ${GITHUB_SECRET_NAME} is already up to date."
+    fi
+    unset CURRENT_GH_TOKEN
+  fi
+
+  gcloud secrets add-iam-policy-binding "${GITHUB_SECRET_NAME}" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/secretmanager.secretAccessor" \
+    --project="${PROJECT_ID}" \
+    --quiet >/dev/null
+
+  SECRETS+=("GITHUB_TOKEN=${GITHUB_SECRET_NAME}:latest")
+fi
+
+SECRETS_FLAG=""
+if [[ ${#SECRETS[@]} -gt 0 ]]; then
+  OLD_IFS="${IFS}"
+  IFS=','
+  SECRETS_FLAG="--set-secrets=${SECRETS[*]}"
+  IFS="${OLD_IFS}"
 fi
 
 # 6. Build and deploy container to Cloud Run

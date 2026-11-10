@@ -11,6 +11,8 @@ from mcp.server.fastmcp import FastMCP
 from config import settings
 from services.bigquery_service import BigQueryService
 from services.logging_service import LoggingService
+from services.runner.service import CodeMenderService, ServiceError
+from services.runner_service import runner_manager
 from services.wiz_service import WizService
 
 # Configure logging
@@ -29,12 +31,12 @@ wiz_service = WizService()
 mcp = FastMCP(
     name="Code Mender Security MCP Server",
     instructions=(
-        "You have access to Google Cloud BigQuery and Cloud Logging tools to search, "
-        "inspect, and triage security findings and automated remediation jobs generated "
-        "by Code Mender. Use these tools to find issues, review generated patches, inspect "
-        "sandbox/execution logs, and diagnose remediation failures. You also have read-only "
-        "access to Wiz cloud security issues (toxic combinations, threat detections, and "
-        "cloud configuration findings) via the Wiz tools."
+        "You have access to Code Mender execution tools (cm_find, cm_validate, cm_fix, "
+        "cm_apply_patch, cm_job_status, cm_list_findings, cm_get_finding) to launch repository "
+        "security scans via Cloud Run Jobs, verify finding exploitability, and generate/apply "
+        "automated remediation patches into BigQuery. You also have Google Cloud BigQuery and "
+        "Cloud Logging tools to search, inspect, and triage historical security findings and "
+        "execution logs, as well as read-only access to Wiz cloud security issues via Wiz tools."
     ),
     stateless_http=True,
 )
@@ -407,6 +409,151 @@ def triage_wiz_issue(issue_id: str) -> str:
     )
 
 
+# ============================================================================
+# Helper Functions: Code Mender Runner Tools
+# ============================================================================
+
+def _wait_for_job(service: CodeMenderService, view: Dict[str, Any], wait_seconds: int) -> Dict[str, Any]:
+    if wait_seconds and view.get("job_id"):
+        return service.job_status(view["job_id"], wait_seconds)
+    return view
+
+
+def _guard_runner(fn, *args, **kwargs) -> Dict[str, Any]:
+    try:
+        return fn(*args, **kwargs)
+    except ServiceError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:
+        logger.exception("CodeMender execution tool call failed: %s", exc)
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+# ============================================================================
+# MCP Tools: Code Mender Execution (Find, Validate, Fix, Patch)
+# ============================================================================
+
+@mcp.tool()
+def cm_find(repo: str, ref: str = "", wait_seconds: int = 0) -> Dict[str, Any]:
+    """Scan an entire repository with CodeMender and store findings in BigQuery.
+
+    Launches an isolated Cloud Run Job execution to clone the repository, run
+    the CodeMender find engine, parse generated SARIF findings, and persist
+    them to the configured BigQuery findings table.
+
+    Args:
+        repo: Repository identifier, e.g. "owner/repo" (GitHub) or an HTTPS git URL.
+        ref: Branch, tag, or commit SHA to scan. Defaults to repository default branch.
+        wait_seconds: Optionally wait up to this many seconds for completion before returning.
+    """
+    def _execute():
+        service = runner_manager.get_service()
+        job = service.start_find(repo, ref)
+        return _wait_for_job(service, job, wait_seconds)
+
+    return _guard_runner(_execute)
+
+
+@mcp.tool()
+def cm_validate(finding_id: str, wait_seconds: int = 0) -> Dict[str, Any]:
+    """Validate (cm verify) a finding's exploitability and update BigQuery.
+
+    Launches a targeted Cloud Run Job execution to test if the vulnerability is
+    genuinely exploitable or a false positive. Updates the finding status in BigQuery
+    to VERIFIED, FALSE_POSITIVE, or INCONCLUSIVE.
+
+    Args:
+        finding_id: Finding ID (e.g. from cm_list_findings or list_codemender_issues).
+        wait_seconds: Optionally wait up to this many seconds for completion before returning.
+    """
+    def _execute():
+        service = runner_manager.get_service()
+        job = service.start_validate(finding_id)
+        return _wait_for_job(service, job, wait_seconds)
+
+    return _guard_runner(_execute)
+
+
+@mcp.tool()
+def cm_fix(finding_id: str, patch_mode: str = "", wait_seconds: int = 0) -> Dict[str, Any]:
+    """Generate a fix (cm fix) for one finding, store it in BigQuery, and patch the repo.
+
+    Launches a Cloud Run Job to synthesize a verified patch for the specified finding.
+    The resulting unified diff patch is persisted into BigQuery, and optionally pushed
+    directly to the git repository as a fix branch or Pull Request.
+
+    Args:
+        finding_id: Finding ID to remediate.
+        patch_mode: "pr" (push branch codemender/fix-<id> and open a GitHub PR),
+            "branch" (push branch only), or "none" (save patch in BigQuery only).
+            Defaults to server configuration ("pr").
+        wait_seconds: Optionally wait up to this many seconds for completion before returning.
+    """
+    def _execute():
+        service = runner_manager.get_service()
+        job = service.start_fix(finding_id, patch_mode)
+        return _wait_for_job(service, job, wait_seconds)
+
+    return _guard_runner(_execute)
+
+
+@mcp.tool()
+def cm_apply_patch(finding_id: str, patch_mode: str = "pr") -> Dict[str, Any]:
+    """Push an already generated and stored patch to the repository.
+
+    Args:
+        finding_id: Finding ID whose stored patch should be applied.
+        patch_mode: "pr" (push branch and open pull request) or "branch" (push branch only).
+    """
+    return _guard_runner(lambda: runner_manager.get_service().apply_patch(finding_id, patch_mode))
+
+
+@mcp.tool()
+def cm_job_status(job_id: str, wait_seconds: int = 0) -> Dict[str, Any]:
+    """Check the status (STAGING, RUNNING, SUCCEEDED, FAILED) and outcome of an execution job.
+
+    Args:
+        job_id: Job ID returned by cm_find, cm_validate, or cm_fix.
+        wait_seconds: Optionally block and poll up to this many seconds for job completion.
+    """
+    return _guard_runner(lambda: runner_manager.get_service().job_status(job_id, wait_seconds))
+
+
+@mcp.tool()
+def cm_list_findings(
+    repo: str = "",
+    status: str = "",
+    scan_job_id: str = "",
+    limit: int = 100,
+) -> Dict[str, Any]:
+    """List CodeMender findings stored in BigQuery, filtered by repo, status, or scan job.
+
+    Args:
+        repo: Filter by repository name (e.g. "owner/repo").
+        status: Filter by status (e.g. "OPEN", "VERIFIED", "FALSE_POSITIVE", "FIXED", "PATCHED").
+        scan_job_id: Filter by the find job ID that generated the findings.
+        limit: Max number of findings to return (default: 100).
+    """
+    return _guard_runner(
+        lambda: {
+            "findings": runner_manager.get_service().list_findings(
+                repo=repo, status=status, scan_job_id=scan_job_id, limit=limit
+            )
+        }
+    )
+
+
+@mcp.tool()
+def cm_get_finding(finding_id: str, include_sarif: bool = False) -> Dict[str, Any]:
+    """Get full details of a specific finding including generated patch, verdict, and PR link.
+
+    Args:
+        finding_id: Finding ID to retrieve.
+        include_sarif: Whether to include the raw SARIF analysis object in the response.
+    """
+    return _guard_runner(lambda: runner_manager.get_service().get_finding(finding_id, include_sarif))
+
+
 # Disable DNS rebinding protection so Cloud Run hostnames (*.run.app) and internal proxies are allowed
 mcp.settings.transport_security.enable_dns_rebinding_protection = False
 
@@ -425,6 +572,7 @@ async def health_check(request: Request) -> Response:
             "dataset": bq_service.dataset,
             "table": bq_service.table,
             "wiz_configured": wiz_service.is_configured,
+            "runner_configured": bool(settings.gcp_project_id),
         }
     )
 
@@ -434,7 +582,7 @@ async def root_info(request: Request) -> Response:
     return JSONResponse(
         {
             "service": "Code Mender MCP Server",
-            "description": "Model Context Protocol server for Code Mender BigQuery and Cloud Logging data.",
+            "description": "Model Context Protocol server for Code Mender execution (find/fix), BigQuery findings, and Cloud Logging.",
             "mcp_streamable_endpoint": "/mcp",
             "mcp_sse_endpoint": "/sse",
             "mcp_messages_endpoint": "/messages",
@@ -451,6 +599,13 @@ async def root_info(request: Request) -> Response:
                 "get_wiz_issue_details",
                 "get_wiz_issues_summary",
                 "query_wiz_graphql",
+                "cm_find",
+                "cm_validate",
+                "cm_fix",
+                "cm_apply_patch",
+                "cm_job_status",
+                "cm_list_findings",
+                "cm_get_finding",
             ],
         }
     )

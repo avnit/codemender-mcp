@@ -1,0 +1,59 @@
+{
+  "schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "CustomSecurityScanner",
+          "version": "1.0.0",
+          "rules": [
+            {
+              "id": "CWE-94",
+              "name": "Injection",
+              "shortDescription": {
+                "text": "Remote Code Execution via Sandbox Escape in B2B Orders"
+              },
+              "fullDescription": {
+                "text": "Arbitrary Code Execution / Sandbox Breakout in B2B Order processing (`/b2b/v2/orders`).\n\nData Flow Trace:\n- **Source**: Untrusted user input enters via `req.body.orderLinesData` in `routes/b2bOrder.ts`.\n- **Sanitization/Validation**: None. The input string is passed directly to `notevil`'s `safeEval` function inside a `node:vm` context.\n- **Sink**: `vm.runInContext('safeEval(orderLinesData)', sandbox, { timeout: 2000 })`.\n\n`notevil` is susceptible to standard JavaScript sandbox escape techniques through prototype / constructor traversal, allowing execution of arbitrary Node.js code on the host system.\n\nConceptual Exploit Payload:\nSend a POST request to `/b2b/v2/orders` (with a valid JWT) and body:\n```json\n{\n  \"orderLinesData\": \"(function(){ return this.constructor.constructor('return process.mainModule.require(\\\"child_process\\\").execSync(\\\"id\\\").toString()')() })()\"\n}\n```\nThis breaks out of the sandbox and executes arbitrary OS commands."
+              },
+              "properties": {
+                "security-severity": "10.0"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CWE-94",
+          "level": "error",
+          "message": {
+            "text": "Remote Code Execution via Sandbox Escape in B2B Orders: Arbitrary Code Execution / Sandbox Breakout in B2B Order processing"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "routes/b2bOrder.ts"
+                },
+                "region": {
+                  "startLine": 21,
+                  "endLine": 23,
+                  "snippet": {
+                    "text": "        const sandbox = { safeEval, orderLinesData }\n        vm.createContext(sandbox)\n        vm.runInContext('safeEval(orderLinesData)', sandbox, { timeout: 2000 })"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "finding_id": "9f7b066a-0d33-5ced-b834-9ad42e83aa40",
+            "confidence": 100,
+            "status": "OPEN"
+          }
+        }
+      ]
+    }
+  ]
+}

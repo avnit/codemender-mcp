@@ -9,10 +9,11 @@ ENV PYTHONUNBUFFERED=1 \
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (ca-certificates for secure GCP API calls)
+# Install system dependencies (git for cloning repos and staging snapshots, ca-certificates, curl)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

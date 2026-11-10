@@ -8,19 +8,26 @@ A Model Context Protocol (MCP) server running on **Google Cloud Run** to inspect
 
 ```mermaid
 flowchart LR
-    subgraph Client["MCP Client (e.g. Claude Desktop, Cursor, Jetski)"]
+    subgraph Client["MCP Client (e.g. Claude Desktop, Cursor, Jetski, Gemini Enterprise)"]
         A[MCP Client]
     end
 
     subgraph CloudRun["GCP Cloud Run (codemender-mcp-server)"]
-        B["FastMCP Server (/sse, /messages)"]
+        B["FastMCP Server (/sse, /messages, /mcp)"]
         C["Cloud Run Health Check (/healthz)"]
+        R["Runner Service (find, validate, fix)"]
         D["BigQuery Service"]
         E["Cloud Logging Service"]
         W["Wiz Service"]
+        B --> R
         B --> D
         B --> E
         B --> W
+    end
+
+    subgraph Runner["Cloud Run Job (codemender-runner)"]
+        J["Ephemeral Job Execution\n(find-full / verify / fix)"]
+        R -->|Launch / Watch| J
     end
 
     subgraph Wiz["Wiz"]
@@ -29,38 +36,57 @@ flowchart LR
     end
 
     subgraph GCP["Google Cloud Platform"]
+        S[("Cloud Storage\n(code snapshots & SARIF)")]
         F[("BigQuery\n(Code Mender Findings Table)")]
         G[("Cloud Logging\n(Traces, Sandbox Logs, Diagnostics)")]
+        R -->|Upload Tarball / Read SARIF| S
+        J -->|Fetch Input / Write Output| S
+        R -->|Store Findings & Patches| F
         D -->|ADC / Query Jobs| F
         E -->|ADC / Entries Filter| G
     end
 
-    A -->|SSE / HTTPS with Auth Token| B
+    subgraph GitHub["GitHub"]
+        GH["GitHub Repositories\n(Pull Requests & Branches)"]
+        R -->|Push Fix Branch & Open PR| GH
+    end
+
+    A -->|Streamable HTTP / SSE / HTTPS| B
 ```
 
 ---
 
 ## Features & Capabilities
 
-### 1. BigQuery Inspection (Code Mender Findings)
+### 1. Code Mender Execution & Auto-Fix (Cloud Run Jobs & BigQuery)
+Launch repository vulnerability scans, exploitability verification, and automated patch generation:
+- **`cm_find`**: Scan an entire git repository (e.g. `owner/repo` or HTTPS URL). Clones the repository snapshot, launches an isolated Cloud Run Job (`codemender-runner find-full`), parses SARIF 2.1.0 findings, and persists all vulnerabilities into BigQuery.
+- **`cm_validate`**: Run `cm verify` on a finding to test exploitability in an ephemeral sandbox. Updates finding status in BigQuery to `VERIFIED` (exploitable), `FALSE_POSITIVE` (refuted), or `INCONCLUSIVE`.
+- **`cm_fix`**: Synthesize a verified fix for a finding using `cm fix`. Stores the unified diff patch in BigQuery, and by default pushes branch `codemender/fix-<finding_id>` and opens a GitHub Pull Request.
+- **`cm_apply_patch`**: Re-push an already generated and stored patch to the repository (as a PR or branch).
+- **`cm_job_status`**: Poll the execution state (`STAGING`, `RUNNING`, `SUCCEEDED`, `FAILED`) of any find, validate, or fix job, with optional blocking timeout (`wait_seconds`).
+- **`cm_list_findings`**: List findings stored in BigQuery filtered by repository, status (`OPEN`, `VERIFIED`, `FALSE_POSITIVE`, `FIXED`, `PATCHED`), or scan job ID.
+- **`cm_get_finding`**: Get full finding details including vulnerability fingerprint, CWE/OWASP metadata, unified diff patch, verification verdict, and PR link.
+
+### 2. BigQuery Inspection (Code Mender Findings)
 - **`list_codemender_issues`**: Query and filter security issues published by Code Mender. Filter by severity (`CRITICAL`, `HIGH`, etc.), status (`DETECTED`, `PATCH_GENERATED`, `VERIFIED`, `FIXED`, `FAILED`), repository, vulnerability type / CWE, date range, or text search.
 - **`get_issue_details`**: Fetch full details for a specific issue ID / finding ID, including code snippets, generated patches / diffs, verification results, and remediation status.
 - **`get_issues_summary`**: High-level aggregated statistics: total findings, open vs. resolved counts, severity breakdown, and top 5 recurring vulnerabilities.
 - **`get_bigquery_schema`**: Inspect BigQuery table schemas, columns, types, and descriptions to guide custom queries.
 - **`query_codemender_bigquery`**: Execute safe, parameterized, read-only SQL queries (`SELECT` and `WITH` statements only).
 
-### 2. Cloud Logging Correlation (Diagnostics & Traces)
+### 3. Cloud Logging Correlation (Diagnostics & Traces)
 - **`get_issue_logs`**: Automatically correlates logs with a specific finding ID or Code Mender `session_id`. Retrieves compiler output, sandbox execution traces, and error logs.
 - **`search_codemender_logs`**: Search Cloud Logging across Code Mender jobs and workers for exceptions, sandbox policy violations (e.g., blocked commands), or scan failures.
 
-### 3. Wiz Issues (Cloud Security Findings)
+### 4. Wiz Issues (Cloud Security Findings)
 Read-only access to Wiz issues through the Wiz GraphQL API. Requires a Wiz service account (see [Wiz Setup](#wiz-setup)). If Wiz isn't configured, these tools return an error and the rest of the server works as normal.
 - **`list_wiz_issues`**: List issues, newest first. Filter by severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFORMATIONAL`), status (`OPEN`, `IN_PROGRESS`, `RESOLVED`, `REJECTED`), type (`TOXIC_COMBINATION`, `THREAT_DETECTION`, `CLOUD_CONFIGURATION`), project, text search, date range, or affected resource. Supports cursor pagination.
 - **`get_wiz_issue_details`**: Full details for one issue: source rule/control with remediation guidance, affected cloud resource, projects, linked tickets, and notes.
 - **`get_wiz_issues_summary`**: Issue counts by severity (open and in-progress by default), with an optional lookback window.
 - **`query_wiz_graphql`**: Run any read-only Wiz GraphQL query. Mutations and subscriptions are rejected.
 
-### 4. MCP Resources & Prompts
+### 5. MCP Resources & Prompts
 - **Resource `codemender://schema`**: BigQuery schema representation of the findings table.
 - **Resource `codemender://critical-issues`**: Live list of the most recent critical findings.
 - **Resource `wiz://critical-issues`**: Latest open critical issues from Wiz.
@@ -74,20 +100,28 @@ Read-only access to Wiz issues through the Wiz GraphQL API. Requires a Wiz servi
 
 ```
 .
-├── .env.example               # Configuration template: copy to .env and fill in (incl. Wiz credentials)
+├── .env.example               # Configuration template: copy to .env and fill in (GCP, Runner, Wiz)
 ├── config.py                  # Pydantic settings loaded from .env / environment variables
 ├── server.py                  # FastMCP server with tools, resources, and Cloud Run routes
+├── codemender/                # Core CodeMender SARIF 2.1.0 parsing, models, and fingerprinting
 ├── services/
 │   ├── __init__.py
 │   ├── bigquery_service.py    # BigQuery client, parameterized queries, and serialization
 │   ├── logging_service.py     # Cloud Logging client, filter generation, and formatting
-│   └── wiz_service.py         # Wiz GraphQL client: OAuth token caching, issue queries
+│   ├── wiz_service.py         # Wiz GraphQL client: OAuth token caching, issue queries
+│   ├── runner_service.py      # Runner service manager & lifecycle wrapper
+│   └── runner/                # CodeMender execution engine (Cloud Run Jobs, GCS transit, git/PRs)
+│       ├── cloud.py           # Cloud Run Jobs client & GCS transit bucket manager
+│       ├── repo.py            # Git & GitHub client (cloning, branch push, PR creation)
+│       ├── service.py         # CodeMenderService orchestrating find, validate, and fix
+│       ├── settings.py        # Runner-specific settings dataclass
+│       └── store.py           # BigQueryStore & InMemoryStore for findings and execution jobs
 ├── tests/
 │   ├── __init__.py
-│   └── test_server.py         # Unit tests with mocks for BigQuery, Logging, and Wiz
-├── Dockerfile                 # Multi-stage, secure non-root Dockerfile for Cloud Run
+│   └── test_server.py         # Unit tests with mocks for BigQuery, Logging, Wiz, and Runner tools
+├── Dockerfile                 # Multi-stage, secure non-root Dockerfile for Cloud Run (git installed)
 ├── .dockerignore              # Clean container build context
-├── requirements.txt           # Python dependencies (mcp, google-cloud-*, uvicorn, etc.)
+├── requirements.txt           # Python dependencies (mcp, google-cloud-*, uvicorn, requests, etc.)
 ├── deploy_cloud_run.sh        # Turnkey deployment script for Cloud Run with CLI flags
 ├── cloudbuild.yaml            # CI/CD pipeline configuration
 └── README.md                  # Project documentation
