@@ -147,12 +147,19 @@ To change a value later (for example, rotating the Wiz secret), edit `.env` and 
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `GCP_PROJECT_ID` | GCP Project ID hosting BigQuery & Logging | ADC Project |
-| `REGION` | Cloud Run region (deploy script only) | `us-central1` |
+| `GCP_PROJECT_ID` | GCP Project ID hosting BigQuery, Cloud Run & Logging | ADC Project |
+| `REGION` | Cloud Run region | `us-central1` |
 | `SERVICE_NAME` | Cloud Run service name (deploy script only) | `codemender-mcp-server` |
 | `BQ_DATASET` | BigQuery dataset containing Code Mender findings | `codemender` |
 | `BQ_TABLE` | BigQuery table containing findings | `findings` |
 | `LOG_NAME_FILTER` | Substring filter for Code Mender logs | `codemender` |
+| `CM_RUNNER_JOB_NAME` | Cloud Run Job name for find/validate/fix execution | `codemender-runner` |
+| `CM_REPORTS_BUCKET` | GCS transit bucket for code snapshots & SARIF | `codemender-reports-<PROJECT_ID>` |
+| `CM_DEFAULT_PATCH_MODE` | Auto-fix patch mode (`pr`, `branch`, or `none`) | `pr` |
+| `GITHUB_TOKEN` | GitHub PAT (`repo` scope) for cloning & opening fix PRs | _(empty)_ |
+| `GITHUB_API_URL` | GitHub REST API base URL | `https://api.github.com` |
+| `GIT_AUTHOR_NAME` | Commit author name for auto-fix branches | `CodeMender` |
+| `GIT_AUTHOR_EMAIL` | Commit author email for auto-fix branches | `codemender-bot@users.noreply.github.com` |
 | `WIZ_CLIENT_ID` | Wiz service account client ID | _(empty: Wiz disabled)_ |
 | `WIZ_CLIENT_SECRET` | Wiz service account client secret | _(empty: Wiz disabled)_ |
 | `WIZ_API_ENDPOINT` | Your tenant's Wiz GraphQL endpoint, e.g. `https://api.us17.app.wiz.io/graphql` | _(empty: Wiz disabled)_ |
@@ -216,14 +223,16 @@ The server will start on `http://0.0.0.0:8080`:
 
 ### Option 1: Automated Script (`deploy_cloud_run.sh`)
 
-The provided [`deploy_cloud_run.sh`](file:///usr/local/google/home/abambah/l400-security-labs/deploy_cloud_run.sh) script handles the entire deployment process:
-1. Enables required GCP APIs (`run`, `bigquery`, `logging`, `artifactregistry`, `cloudbuild`).
+The provided [`deploy_cloud_run.sh`](file:///usr/local/google/home/abambah/l400-security-labs/deploy_cloud_run.sh) script handles the entire deployment process (see [`DEPLOYMENT_AND_TESTING_GUIDE.md`](file:///usr/local/google/home/abambah/l400-security-labs/DEPLOYMENT_AND_TESTING_GUIDE.md) for the complete end-to-end deployment and testing runbook):
+1. Enables required GCP APIs (`run`, `bigquery`, `logging`, `storage`, `artifactregistry`, `cloudbuild`).
 2. Provisions a dedicated runtime service account (`codemender-mcp-sa`).
 3. Grants least-privilege IAM roles:
-   - `roles/bigquery.dataViewer` (reads findings tables)
+   - `roles/bigquery.dataEditor` (reads and ingests findings & patches)
    - `roles/bigquery.jobUser` (runs query jobs)
    - `roles/logging.viewer` (reads Cloud Logging entries)
-4. Builds the container image from the [`Dockerfile`](file:///usr/local/google/home/abambah/l400-security-labs/Dockerfile) and deploys to Cloud Run.
+   - `roles/storage.objectUser` (uploads code snapshots & reads SARIF receipts)
+   - `roles/run.developer` (triggers `codemender-runner` Cloud Run Job executions)
+4. Re-enables the Default Compute Service Account if disabled for Cloud Build, builds the container image from [`Dockerfile`](file:///usr/local/google/home/abambah/l400-security-labs/Dockerfile), and deploys to Cloud Run.
 
 The script reads `.env` first, so once that file is filled in you don't need any flags. If the `WIZ_*` values are set, it also:
 - enables the Secret Manager API,
